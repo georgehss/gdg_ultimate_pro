@@ -195,7 +195,7 @@ class HioveScraper:
         except Exception as e:
             logger.error(f"❌ Erro ao configurar aba para {symbol}: {e}")
 
-    async def place_order(self, symbol: str, direction: str):
+    async def place_order(self, symbol: str, direction: str, amount: float = None):
         page = self.pages.get(symbol)
         
         if not page:
@@ -206,6 +206,19 @@ class HioveScraper:
             try:
                 await page.bring_to_front()
                 await asyncio.sleep(0.1)
+                
+                # ==========================================
+                # INJEÇÃO MARTINGALE: Atualizar valor antes de atirar
+                # ==========================================
+                if amount is not None:
+                    xpath_valor = '//*[@id="sider-trade"]/div/div/form/div[2]/div[2]/div/div/div/div/div/div/input'
+                    locator_valor = page.locator(f'xpath={xpath_valor}')
+                    await locator_valor.click()
+                    await locator_valor.fill("")
+                    await asyncio.sleep(0.1)
+                    await locator_valor.type(str(round(amount, 2)), delay=50) # Digita o novo valor
+                    await page.keyboard.press("Enter")
+                    await asyncio.sleep(0.2)
                 
                 # ==========================================
                 # SINCRONIZAÇÃO COM O RELÓGIO DA CORRETORA

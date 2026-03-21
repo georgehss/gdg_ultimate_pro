@@ -24,8 +24,11 @@ class TradingTelegramBot:
             "assets": [],       
             "duration": "01:00",
             "amount": 1.0,
-            "take_profit": 50.0, # NOVO
-            "stop_loss": -20.0   # NOVO
+            "martingale_type": "Nenhum",   # NOVO
+            "martingale_steps": 0,         # NOVO
+            "martingale_multiplier": 2.0,  # NOVO
+            "take_profit": 50.0,
+            "stop_loss": -20.0
         }
         self.setup_step = "account" # Controla em qual passo estamos
 
@@ -109,6 +112,31 @@ class TradingTelegramBot:
                  InlineKeyboardButton("$ 5", callback_data='amt_5')],
                 [InlineKeyboardButton("$ 10", callback_data='amt_10'),
                  InlineKeyboardButton("$ 20", callback_data='amt_20')]
+            ]
+
+        elif self.setup_step == "martingale_type":
+            text = "🔄 *Passo 6/10: Martingale*\nDeseja utilizar recuperação de perdas (Martingale)?"
+            keyboard = [
+                [InlineKeyboardButton("❌ Nenhum", callback_data='mgtype_Nenhum')],
+                [InlineKeyboardButton("🕯️ Na Próxima Vela", callback_data='mgtype_Vela')],
+                [InlineKeyboardButton("📡 No Próximo Sinal", callback_data='mgtype_Sinal')]
+            ]
+
+        elif self.setup_step == "martingale_steps":
+            text = "🔢 *Passo 7/10: Passos do Martingale*\nQuantas vezes o bot deve tentar recuperar?"
+            keyboard = [
+                [InlineKeyboardButton("1 Passo", callback_data='mgstep_1'),
+                 InlineKeyboardButton("2 Passos", callback_data='mgstep_2')],
+                [InlineKeyboardButton("3 Passos", callback_data='mgstep_3')]
+            ]
+
+        elif self.setup_step == "martingale_multiplier":
+            text = "✖️ *Passo 8/10: Multiplicador*\nQual o fator de multiplicação de banca do MG?"
+            keyboard = [
+                [InlineKeyboardButton("2.0 x", callback_data='mgmult_2.0'),
+                 InlineKeyboardButton("2.2 x", callback_data='mgmult_2.2')],
+                [InlineKeyboardButton("2.5 x", callback_data='mgmult_2.5'),
+                 InlineKeyboardButton("3.0 x", callback_data='mgmult_3.0')]
             ]
 
         elif self.setup_step == "take_profit":
@@ -201,18 +229,40 @@ class TradingTelegramBot:
         # Passo 5: Valor
         elif data.startswith('amt_'):
             self.user_config["amount"] = float(data.split('_')[1])
-            self.setup_step = "take_profit" # Agora vai para o Take Profit
+            self.setup_step = "martingale_type" # Vai para o Martingale
             
-        # Passo 6: Take Profit
+        # Passo 6: Martingale Type
+        elif data.startswith('mgtype_'):
+            self.user_config["martingale_type"] = data.split('_')[1]
+            if self.user_config["martingale_type"] == "Nenhum":
+                self.setup_step = "take_profit" # Pula o resto do MG
+            else:
+                self.setup_step = "martingale_steps"
+
+        # Passo 7: Martingale Steps
+        elif data.startswith('mgstep_'):
+            self.user_config["martingale_steps"] = int(data.split('_')[1])
+            self.setup_step = "martingale_multiplier"
+
+        # Passo 8: Martingale Multiplier
+        elif data.startswith('mgmult_'):
+            self.user_config["martingale_multiplier"] = float(data.split('_')[1])
+            self.setup_step = "take_profit"
+            
+        # Passo 9: Take Profit
         elif data.startswith('tp_'):
             self.user_config["take_profit"] = float(data.split('_')[1])
-            self.setup_step = "stop_loss" # Vai para o Stop Loss
+            self.setup_step = "stop_loss"
 
-        # Passo 7: Stop Loss (Finaliza!)
+        # Passo 10: Stop Loss (Finaliza!)
         elif data.startswith('sl_'):
             self.user_config["stop_loss"] = float(data.split('_')[1])
             
-            # MENSAGEM FINAL E LIBERAÇÃO DO MAIN.PY
+            # Ajuste a mensagem de resumo final para mostrar o Martingale
+            mg_str = f"❌ Desativado"
+            if self.user_config['martingale_type'] != "Nenhum":
+                mg_str = f"{self.user_config['martingale_type']} | {self.user_config['martingale_steps']} passos | {self.user_config['martingale_multiplier']}x"
+
             resumo = (
                 f"🚀 *SISTEMA INICIANDO!*\n\n"
                 f"▫️ Conta: {'DEMO 🟢' if self.user_config['is_demo'] else 'REAL 🔴'}\n"
@@ -220,12 +270,13 @@ class TradingTelegramBot:
                 f"▫️ Ativos: {', '.join(self.user_config['assets'])}\n"
                 f"▫️ Tempo: {self.user_config['duration']}\n"
                 f"▫️ Valor Ordem: ${self.user_config['amount']}\n"
+                f"🔄 Martingale: {mg_str}\n"
                 f"🎯 Take Profit: ${self.user_config['take_profit']}\n"
                 f"🛑 Stop Loss: ${self.user_config['stop_loss']}\n\n"
                 f"⏳ *Abrindo navegador...*"
             )
             await query.edit_message_text(text=resumo, parse_mode='Markdown')
-            self.setup_event.set() # <--- LIBERA O SINAL VERDE!
+            self.setup_event.set()
             return
 
         # Atualiza o painel para o próximo passo (se não for o fim)

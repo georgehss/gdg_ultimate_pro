@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from dotenv import load_dotenv
-from gh_hiove_bot.src.scraper.hiove_scraper import HioveScraper
+from src.scraper.hiove_scraper import HioveScraper
 
 # Carrega as senhas do .env
 load_dotenv()

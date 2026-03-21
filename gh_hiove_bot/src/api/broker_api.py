@@ -12,6 +12,7 @@ class HioveBrokerAPI:
         self.active_monitors = 0        # Conta quantas ordens estão abertas
         self.stop_triggered = False     # Sinaliza se bateu a meta/loss
         self.limit_reached_msg = None   # Guarda a mensagem de Stop Loss/Take Profit
+        self.martingale_state = {} # Guarda em que passo do MG cada ativo está
 
     async def init_session(self):
         self.session = aiohttp.ClientSession()
@@ -46,10 +47,21 @@ class HioveBrokerAPI:
     # ========================================================
     # NOVA FUNÇÃO UNIVERSAL DE ORDEM E MONITORAMENTO
     # ========================================================
-    async def place_order_and_monitor(self, symbol: str, direction: str, amount: float, duration: str, telegram_alert_cb):
-        # 1. Impede novas ordens se o bot já decidiu desligar
+    async def place_order_and_monitor(self, symbol: str, direction: str, amount: float, duration: str, telegram_alert_cb, current_step=0):
         if self.stop_triggered:
             return None
+            
+        # --- LÓGICA DO MARTINGALE SINAL ANTES DE ENTRAR ---
+        mg_type = self.user_config.get("martingale_type", "Nenhum")
+        state = self.martingale_state.get(symbol, {'step': 0, 'next_amount': amount})
+        
+        # Se for modo Sinal, for o 1º sinal do bot e existir um passo guardado, nós substituímos o valor
+        if mg_type == "Sinal" and current_step == 0 and state['step'] > 0:
+            amount = state['next_amount']
+            current_step = state['step']
+            msg = f"🔄 Aplicando Martingale Sinal (Passo {current_step}) para {symbol}: Novo valor ${amount:.2f}"
+            logger.info(msg)
+            await telegram_alert_cb(msg)
         
         # Lê os limites configurados pelo utilizador
         tp = self.user_config.get("take_profit", 50.0)
@@ -76,7 +88,8 @@ class HioveBrokerAPI:
             return None 
 
         logger.info(f"⚡ Disparando ordem de {direction} via Estratégia...")
-        resultado = await self.scraper.place_order(symbol, direction)
+        # Adicione a variável 'amount' na chamada para o scraper!
+        resultado = await self.scraper.place_order(symbol, direction, amount)
         
         if resultado and "id" in resultado:
             order_id = resultado["id"]
@@ -85,18 +98,16 @@ class HioveBrokerAPI:
             minutos, segundos = map(int, duration.split(':'))
             tempo_total_segundos = (minutos * 60) + segundos
             
-            logger.info(f"⏳ Ordem colocada. A aguardar {tempo_total_segundos + 3}s pelo fecho da vela...")
-            
-            # 3. INCREMENTA O CONTADOR AQUI, antes de iniciar o monitor
             self.active_monitors += 1
-            asyncio.create_task(self._monitor_task(symbol, order_id, tempo_total_segundos, telegram_alert_cb, amount, direction, duration))
+            # Passe o current_step para o monitor task
+            asyncio.create_task(self._monitor_task(symbol, order_id, tempo_total_segundos, telegram_alert_cb, amount, direction, duration, current_step))
         else:
             await log_trade(symbol, direction, amount, duration, "FALHOU", None)
             msg_erro = f"❌ *Erro ao executar a ordem em {symbol}!*"
             logger.error(msg_erro.replace('*', ''))
             await telegram_alert_cb(msg_erro)
 
-    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str):
+    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0):
         try:
             """Espera o tempo da vela, lê o histórico e calcula o lucro líquido real"""
             await asyncio.sleep(tempo_espera + 3) # Espera a vela terminar + 3 segs de margem
@@ -144,8 +155,43 @@ class HioveBrokerAPI:
                 f"💰 *Balanço da Conta:* ${saldo_atual:.2f}\n"
                 f"📊 *Lucro Acumulado:* ${lucro_acumulado:.2f}"
             )
+            # ... Mensagem de Resultado enviada ...
             await telegram_alert_cb(msg)
             logger.info(msg.replace('\n', ' | ').replace('*', ''))
+
+            # ==========================================
+            # AÇÃO DE MARTINGALE PÓS-RESULTADO
+            # ==========================================
+            mg_type = self.user_config.get("martingale_type", "Nenhum")
+            mg_steps = self.user_config.get("martingale_steps", 0)
+            mg_mult = self.user_config.get("martingale_multiplier", 2.0)
+
+            # Empate ou Win limpam o histórico do ativo (volta para entrada normal)
+            if status in ["WIN", "EMPATE"]:
+                self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
+                
+            elif status == "LOSS" and mg_type != "Nenhum":
+                if current_step < mg_steps:
+                    next_step = current_step + 1
+                    next_amount = amount * mg_mult
+
+                    if mg_type == "Vela":
+                        msg_mg = f"🔄 *Martingale Vela* acionado! (Passo {next_step}/{mg_steps})\nEntrando imediatamente com ${next_amount:.2f} em {symbol} ({direction})."
+                        await telegram_alert_cb(msg_mg)
+                        # Chama a si mesmo imediatamente para pegar a próxima vela
+                        asyncio.create_task(self.place_order_and_monitor(
+                            symbol, direction, next_amount, duration, telegram_alert_cb, current_step=next_step
+                        ))
+                        
+                    elif mg_type == "Sinal":
+                        # Apenas guarda o valor na gaveta. O bot aplica no próximo sinal que a estratégia emitir
+                        self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount}
+                        msg_mg = f"🔄 *Martingale Sinal* preparado (Passo {next_step}/{mg_steps}).\nO próximo sinal de {symbol} entrará pesando ${next_amount:.2f}."
+                        await telegram_alert_cb(msg_mg)
+                else:
+                    msg_mg = f"⚠️ *Martingale Finalizado* em {symbol}. Limite de {mg_steps} passos batido. Retornando ao valor normal."
+                    await telegram_alert_cb(msg_mg)
+                    self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
 
             # ==========================================
             # 4. VERIFICAÇÃO IMEDIATA (STOP LOSS / TAKE PROFIT)
