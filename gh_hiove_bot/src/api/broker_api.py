@@ -110,7 +110,15 @@ class HioveBrokerAPI:
     async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0):
         try:
             """Espera o tempo da vela, lê o histórico e calcula o lucro líquido real"""
-            await asyncio.sleep(tempo_espera + 3) # Espera a vela terminar + 3 segs de margem
+            import time
+            agora = time.time()
+            
+            # Sincroniza a espera exatamente com o fechamento da vela
+            segundos_passados = agora % tempo_espera
+            espera_real = tempo_espera - segundos_passados
+            
+            # Dorme exatamente até a virada da vela + 1 segundo
+            await asyncio.sleep(espera_real + 1)
             
             status, lucro_bruto = await self.scraper.check_trade_result(symbol)
             
@@ -156,7 +164,7 @@ class HioveBrokerAPI:
                 f"📊 *Lucro Acumulado:* ${lucro_acumulado:.2f}"
             )
             # ... Mensagem de Resultado enviada ...
-            await telegram_alert_cb(msg)
+            asyncio.create_task(telegram_alert_cb(msg)) # Envia em 2º plano
             logger.info(msg.replace('\n', ' | ').replace('*', ''))
 
             # ==========================================
@@ -177,7 +185,7 @@ class HioveBrokerAPI:
 
                     if mg_type == "Vela":
                         msg_mg = f"🔄 *Martingale Vela* acionado! (Passo {next_step}/{mg_steps})\nEntrando imediatamente com ${next_amount:.2f} em {symbol} ({direction})."
-                        await telegram_alert_cb(msg_mg)
+                        asyncio.create_task(telegram_alert_cb(msg_mg)) # Envia em 2º plano
                         # Chama a si mesmo imediatamente para pegar a próxima vela
                         asyncio.create_task(self.place_order_and_monitor(
                             symbol, direction, next_amount, duration, telegram_alert_cb, current_step=next_step

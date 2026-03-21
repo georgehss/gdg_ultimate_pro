@@ -180,14 +180,21 @@ class HioveScraper:
             locator_valor = page.locator(f'xpath={xpath_valor}')
             await locator_valor.wait_for(state="visible", timeout=5000)
             
-            # Limpa o campo de forma nativa e força a digitação limpa
+            # Limpa o campo de forma nativa via teclado
             await locator_valor.click()
-            await locator_valor.fill("") 
+            await page.keyboard.press("Control+A") 
+            await page.keyboard.press("Backspace")
             await asyncio.sleep(0.1)
-            await locator_valor.type(str(int(amount)), delay=100)
+            
+            # Formata corretamente o valor inicial
+            if amount.is_integer():
+                str_amount = str(int(amount))
+            else:
+                str_amount = str(round(amount, 2))
+                
+            await locator_valor.type(str_amount, delay=100)
             await page.keyboard.press("Enter")
             await asyncio.sleep(0.5)
-            # ==========================================
             
             self.pages[symbol] = page
             logger.info(f"✅ Aba do ativo {symbol} configurada e PRONTA PARA ATIRAR!")
@@ -214,9 +221,20 @@ class HioveScraper:
                     xpath_valor = '//*[@id="sider-trade"]/div/div/form/div[2]/div[2]/div/div/div/div/div/div/input'
                     locator_valor = page.locator(f'xpath={xpath_valor}')
                     await locator_valor.click()
-                    await locator_valor.fill("")
+                    
+                    # 1. Limpeza nativa via teclado (resolve o bloqueio do Ant Design)
+                    await page.keyboard.press("Control+A") 
+                    await page.keyboard.press("Backspace")
                     await asyncio.sleep(0.1)
-                    await locator_valor.type(str(round(amount, 2)), delay=50) # Digita o novo valor
+                    
+                    # 2. Verifica se o número tem casas decimais necessárias (ex: $5.0 vira "5", mas $12.5 vira "12.5")
+                    # Para evitar passar o "5.0" que causa conflito.
+                    if amount.is_integer():
+                        str_amount = str(int(amount))
+                    else:
+                        str_amount = str(round(amount, 2))
+                        
+                    await locator_valor.type(str_amount, delay=100) 
                     await page.keyboard.press("Enter")
                     await asyncio.sleep(0.2)
                 
@@ -327,11 +345,12 @@ class HioveScraper:
             # Aguarda segundos para a corretora processar o Win/Loss e actualizar o saldo
             # ==========================================
             logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando a corretora actualizar o histórico...")
-            await asyncio.sleep(3)
+            # Tempo drasticamente reduzido para agilizar o Martingale
+            await asyncio.sleep(1.5)
             # 1. Clica na aba de 'Histórico' para garantir que as ordens fechadas aparecem
             xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
             await page.locator(f'xpath={xpath_btn_historico}').click(timeout=5000)
-            await asyncio.sleep(1.5) # Dá um tempinho para a lista carregar
+            await asyncio.sleep(0.5) # Dá um tempinho para a lista carregar
             
             # 2. Localiza os itens e FILTRA pelo ativo específico daquela ordem
             xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//li'
