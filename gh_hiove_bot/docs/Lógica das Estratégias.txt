@@ -1,0 +1,52 @@
+1. Estratégia Engolfo MA (engulf_ma_strategy.py)
+Esta estratégia combina a leitura do preço puro (Price Action) com um filtro de tendência.
+
+A Lógica: O robô analisa as duas últimas velas totalmente fechadas. Ele procura por um padrão de "Engolfo", onde o corpo da vela atual cobre (engolfa) totalmente o corpo da vela anterior. Uma tolerância matemática (epsilon) é usada para lidar com pequenas variações nos preços.
+
+Gatilho de Compra:
+
+A vela anterior foi de baixa (vermelha) e a atual é de alta (verde) cobrindo a anterior.
+
+O preço de fechamento tem de respeitar a Média Móvel Exponencial (EMA, padrão de 8 períodos). No modo "BREAK" (rompimento), a mínima da vela tem de ter tocado ou atravessado a EMA e o fechamento tem de ser acima dela.
+
+Gatilho de Venda:
+
+A vela anterior foi verde e a atual é vermelha (engolfo de baixa).
+
+No modo "BREAK", a máxima tocou a EMA e fechou abaixo dela.
+
+Proteção: Utiliza a variável self.last_signal_time para gravar o horário da vela e garantir que não entra duas vezes no mesmo padrão gráfico.
+
+2. Estratégia MA Cross (ma_cross_strategy.py)
+Esta é uma estratégia de rastreio de tendência focada no cruzamento de duas médias móveis com múltiplos filtros institucionais para evitar "ruído" do mercado.
+
+A Lógica: Calcula uma EMA Rápida (padrão 9) e uma EMA Lenta (padrão 21).
+
+Gatilho de Compra: A linha da EMA Rápida cruza de baixo para cima a linha da EMA Lenta.
+
+Gatilho de Venda: A linha da EMA Rápida cruza de cima para baixo a linha da EMA Lenta.
+
+Filtros de Segurança (O que bloqueia o sinal):
+
+Filtro ATR (Separação): Garante que as linhas não estão simplesmente "encostadas" num mercado lateral. A distância entre as duas médias tem de ser maior que uma fração do indicador de volatilidade ATR.
+
+Filtro de Inclinação (Slope): Verifica a vela de períodos anteriores para garantir que a EMA Lenta está apontada para a direção da operação (inclinada para cima nas compras, para baixo nas vendas).
+
+Cooldown: Exige que passe um número mínimo de velas desde a última operação antes de permitir um novo sinal.
+
+3. Estratégia RSI (rsi_strategy.py)
+Esta estratégia foca-se em oscilações e reversões de mercado (Zonas de Sobremarcha), medindo a força relativa (RSI).
+
+A Lógica: Calcula o RSI (padrão de 14 períodos) para identificar se o mercado subiu ou desceu demais de forma muito rápida. Define zonas extremas: Sobrevendido (abaixo de 30) e Sobrecomprado (acima de 70).
+
+Gatilhos (Dependem do Modo):
+
+Modo TOUCH: Dispara o sinal instantaneamente assim que o RSI bate no limite (<= 30 para Compra, >= 70 para Venda).
+
+Modo CROSSBACK (Padrão): É mais seguro. O sinal só é disparado quando o RSI entra na zona extrema e depois volta a cruzar a linha para fora dela (ex: desce a 28, e quando sobe cruzando o 30, dispara Compra).
+
+Filtros de Segurança:
+
+Confirmação de Vela (confirm_candle): Mesmo que o RSI dê o sinal, o bot só entra se a cor da vela atual confirmar a direção (verde para comprar, vermelha para vender).
+
+Trava de Repetição: O bot memoriza o last_signal ('BUY' ou 'SELL') para evitar mandar dezenas de mensagens seguidas enquanto o RSI flutua na mesma zona. A trava só é solta quando o RSI volta para a área central "neutra" (entre 30 e 70).
