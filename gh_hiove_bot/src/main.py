@@ -120,7 +120,8 @@ async def main():
             manager.add_strategy(strat)
             
         strategy_task = asyncio.create_task(manager.start_all())
-        await tg_bot.send_alert("✅ Estratégia de Consenso (As 3 Juntas) iniciada!")
+        # Mensagem padronizada corrigida:
+        await tg_bot.send_alert("✅ Estratégia automática de Consenso iniciada!")
 
     elif config["mode"] == "live":
         # MODO 3: SINAIS DO MT5 (WEBHOOK)

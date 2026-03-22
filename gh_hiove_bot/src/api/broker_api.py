@@ -99,12 +99,12 @@ class HioveBrokerAPI:
             # ==========================================
             # NOVA MENSAGEM DE ENTRADA PADRONIZADA
             # ==========================================
-            emoji_circle = "🟢" if direction.upper() == "BUY" else "🔴"
-            dir_icon = "📈 COMPRA (BUY)" if direction.upper() == "BUY" else "📉 VENDA (SELL)"
+            emoji_circle = "🈯️" if direction.upper() == "BUY" else "🈲"
+            dir_icon = "🈯️ COMPRA" if direction.upper() == "BUY" else "🈲 VENDA"
             
             msg_entrada = (
                 f"🚀 *Sinal Executado!*\n"
-                f"{emoji_circle}\n"
+                #f"{emoji_circle}\n"
                 f"▫️ Ativo: {symbol}\n"
                 f"▫️ Direção: {dir_icon}\n"
                 f"▫️ Tempo: {duration}\n"
@@ -172,7 +172,7 @@ class HioveBrokerAPI:
             else: emoji = "⚠️ AVISO"
 
             # Formatação de ícones para a direção (opcional, mas fica bem visual)
-            dir_icon = "📈 COMPRA (BUY)" if direction.upper() == "BUY" else "📉 VENDA (SELL)"
+            dir_icon = "🈯️ COMPRA" if direction.upper() == "BUY" else "🈲 VENDA"
 
             msg = (
                 f"*Resultado da Operação!*\n"
@@ -180,7 +180,7 @@ class HioveBrokerAPI:
                 f"▫️ Ativo: {symbol}\n"
                 f"▫️ Direção: {dir_icon}\n"
                 f"▫️ Tempo: {duration}\n"
-                f"▫️ Payout: {payout}\n"   # NOVIDADE AQUI
+                f"▫️ Payout: {payout}\n"
                 f"▫️ Valor Ordem: ${amount:.2f}\n"
                 f"▫️ Resultado: ${lucro_liquido:.2f}\n\n"
                 f"💰 *Balanço da Conta:* ${saldo_atual:.2f}\n"
