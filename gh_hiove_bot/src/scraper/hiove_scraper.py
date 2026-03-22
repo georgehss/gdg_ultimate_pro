@@ -207,7 +207,7 @@ class HioveScraper:
         
         if not page:
             logger.error(f"Página para {symbol} não encontrada!")
-            return None
+            return {"id": f"real_scraper_order_{symbol}", "payout": payout_str}
             
         async with self.trade_lock:
             try:
@@ -237,6 +237,18 @@ class HioveScraper:
                     await locator_valor.type(str_amount, delay=100) 
                     await page.keyboard.press("Enter")
                     await asyncio.sleep(0.2)
+
+                # ==========================================
+                # LER O PAYOUT ATUAL DA CORRETORA
+                # ==========================================
+                payout_str = "N/A"
+                try:
+                    # Procura o elemento HTML que contém a classe parcial do Payout
+                    payout_locator = page.locator('span[class*="_payout-value_"]').first
+                    if await payout_locator.is_visible(timeout=1000):
+                        payout_str = await payout_locator.inner_text()
+                except Exception as e:
+                    logger.debug(f"Aviso: Não foi possível ler o payout: {e}")
                 
                 # ==========================================
                 # SINCRONIZAÇÃO COM O RELÓGIO DA CORRETORA

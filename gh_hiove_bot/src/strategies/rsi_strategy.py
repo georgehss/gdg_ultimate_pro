@@ -123,7 +123,6 @@ class RSIStrategy(BaseStrategy):
                 self.last_signal_time = current_candle_time
                 log_msg = f"⚡ [PRO RSI] COMPRA em {self.symbol}! Retração a favor da tendência (EMA > SMMA) com RSI ({rsi1:.1f}) e vela forte confirmada."
                 logger.info(log_msg)
-                await self.telegram_alert(f"🟢 {log_msg}")
                 await self.broker.place_order_and_monitor(symbol=self.symbol, direction="BUY", amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
                 
             elif is_sell:
@@ -131,7 +130,6 @@ class RSIStrategy(BaseStrategy):
                 self.last_signal_time = current_candle_time
                 log_msg = f"⚡ [PRO RSI] VENDA em {self.symbol}! Retração a favor da tendência (EMA < SMMA) com RSI ({rsi1:.1f}) e vela forte confirmada."
                 logger.info(log_msg)
-                await self.telegram_alert(f"🔴 {log_msg}")
                 await self.broker.place_order_and_monitor(symbol=self.symbol, direction="SELL", amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
                 
         except Exception as e:

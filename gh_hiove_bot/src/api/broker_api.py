@@ -93,21 +93,43 @@ class HioveBrokerAPI:
         
         if resultado and "id" in resultado:
             order_id = resultado["id"]
+            payout_str = resultado.get("payout", "N/A") 
             await log_trade(symbol, direction, amount, duration, "ABERTA", order_id)
+            
+            # ==========================================
+            # NOVA MENSAGEM DE ENTRADA PADRONIZADA
+            # ==========================================
+            emoji_circle = "🟢" if direction.upper() == "BUY" else "🔴"
+            dir_icon = "📈 COMPRA (BUY)" if direction.upper() == "BUY" else "📉 VENDA (SELL)"
+            
+            msg_entrada = (
+                f"🚀 *Sinal Executado!*\n"
+                f"{emoji_circle}\n"
+                f"▫️ Ativo: {symbol}\n"
+                f"▫️ Direção: {dir_icon}\n"
+                f"▫️ Tempo: {duration}\n"
+                f"▫️ Payout: {payout_str}\n"
+                f"▫️ Valor Ordem: ${amount:.2f}"
+            )
+            asyncio.create_task(telegram_alert_cb(msg_entrada))
+            # ==========================================
             
             minutos, segundos = map(int, duration.split(':'))
             tempo_total_segundos = (minutos * 60) + segundos
             
             self.active_monitors += 1
-            # Passe o current_step para o monitor task
-            asyncio.create_task(self._monitor_task(symbol, order_id, tempo_total_segundos, telegram_alert_cb, amount, direction, duration, current_step))
+            # Passe o payout_str para o monitor task
+            asyncio.create_task(self._monitor_task(
+                symbol, order_id, tempo_total_segundos, telegram_alert_cb, 
+                amount, direction, duration, current_step, payout_str
+            ))
         else:
             await log_trade(symbol, direction, amount, duration, "FALHOU", None)
             msg_erro = f"❌ *Erro ao executar a ordem em {symbol}!*"
             logger.error(msg_erro.replace('*', ''))
             await telegram_alert_cb(msg_erro)
 
-    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0):
+    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A"):
         try:
             """Espera o tempo da vela, lê o histórico e calcula o lucro líquido real"""
             import time
@@ -158,6 +180,7 @@ class HioveBrokerAPI:
                 f"▫️ Ativo: {symbol}\n"
                 f"▫️ Direção: {dir_icon}\n"
                 f"▫️ Tempo: {duration}\n"
+                f"▫️ Payout: {payout}\n"   # NOVIDADE AQUI
                 f"▫️ Valor Ordem: ${amount:.2f}\n"
                 f"▫️ Resultado: ${lucro_liquido:.2f}\n\n"
                 f"💰 *Balanço da Conta:* ${saldo_atual:.2f}\n"

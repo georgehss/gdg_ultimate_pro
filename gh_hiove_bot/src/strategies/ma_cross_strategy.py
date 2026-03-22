@@ -147,8 +147,6 @@ class MACrossStrategy(BaseStrategy):
                 self.bars_since_signal = 0 
                 log_msg = f"🚀 [PRO MA CROSS] COMPRA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}! Tendência validada pela SMMA {self.long_ma_period} e RSI saudável ({rsi1:.1f})."
                 logger.info(log_msg)
-                await self.telegram_alert(f"🟢 {log_msg}")
-                
                 await self.broker.place_order_and_monitor(
                     symbol=self.symbol, direction="BUY", 
                     amount=self.trade_amount, duration=self.trade_duration, 
@@ -159,8 +157,6 @@ class MACrossStrategy(BaseStrategy):
                 self.bars_since_signal = 0 
                 log_msg = f"🚀 [PRO MA CROSS] VENDA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}! Tendência validada pela SMMA {self.long_ma_period} e RSI saudável ({rsi1:.1f})."
                 logger.info(log_msg)
-                await self.telegram_alert(f"🔴 {log_msg}")
-                
                 await self.broker.place_order_and_monitor(
                     symbol=self.symbol, direction="SELL", 
                     amount=self.trade_amount, duration=self.trade_duration,

@@ -129,14 +129,12 @@ class EngulfMAStrategy(BaseStrategy):
                 self.last_signal_time = current_candle_time
                 log_msg = f"🔥 [PRO] COMPRA: {bullish_pattern} validado em {self.symbol}! Rompeu EMA {self.ma_period}, EMA acima da SMMA {self.long_ma_period}, RSI = {rsi1:.1f} e boa Volatilidade."
                 logger.info(log_msg)
-                await self.telegram_alert(f"🟢 {log_msg}")
                 await self.broker.place_order_and_monitor(symbol=self.symbol, direction="BUY", amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
                 
             elif is_sell:
                 self.last_signal_time = current_candle_time
                 log_msg = f"🔥 [PRO] VENDA: {bearish_pattern} validado em {self.symbol}! Rompeu EMA {self.ma_period}, EMA abaixo da SMMA {self.long_ma_period}, RSI = {rsi1:.1f} e boa Volatilidade."
                 logger.info(log_msg)
-                await self.telegram_alert(f"🔴 {log_msg}")
                 await self.broker.place_order_and_monitor(symbol=self.symbol, direction="SELL", amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
                 
         except Exception as e:
