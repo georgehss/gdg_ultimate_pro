@@ -365,7 +365,7 @@ class HioveScraper:
             # 1. Clica na aba de 'Histórico' para garantir que as ordens fechadas aparecem
             xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
             await page.locator(f'xpath={xpath_btn_historico}').click(timeout=5000)
-            await asyncio.sleep(1.2) # Dá um tempinho para a lista carregar
+            await asyncio.sleep(2.0) # Dá um tempinho para a lista carregar
             
             # 2. Localiza os itens e FILTRA pelo ativo específico daquela ordem
             xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//li'
