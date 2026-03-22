@@ -145,23 +145,15 @@ class MACrossStrategy(BaseStrategy):
             # --- Execução de Ordens ---
             if cross_up:
                 self.bars_since_signal = 0 
-                log_msg = f"🚀 [PRO MA CROSS] COMPRA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}! Tendência validada pela SMMA {self.long_ma_period} e RSI saudável ({rsi1:.1f})."
+                log_msg = f"🚀 [PRO MA CROSS] COMPRA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}!"
                 logger.info(log_msg)
-                await self.broker.place_order_and_monitor(
-                    symbol=self.symbol, direction="BUY", 
-                    amount=self.trade_amount, duration=self.trade_duration, 
-                    telegram_alert_cb=self.telegram_alert
-                )
+                return "BUY", log_msg
 
             elif cross_down:
                 self.bars_since_signal = 0 
-                log_msg = f"🚀 [PRO MA CROSS] VENDA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}! Tendência validada pela SMMA {self.long_ma_period} e RSI saudável ({rsi1:.1f})."
+                log_msg = f"🚀 [PRO MA CROSS] VENDA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}!"
                 logger.info(log_msg)
-                await self.broker.place_order_and_monitor(
-                    symbol=self.symbol, direction="SELL", 
-                    amount=self.trade_amount, duration=self.trade_duration,
-                    telegram_alert_cb=self.telegram_alert
-                )
+                return "SELL", log_msg
                 
         except Exception as e:
             logger.error(f"[{self.name}] Erro no processamento do MA Cross: {e}")
@@ -173,14 +165,17 @@ class MACrossStrategy(BaseStrategy):
         logger.info(f"[{self.name}] Estratégia PRO MA Cross iniciada com sincronização.")
         
         import time 
-        
         while self.is_running:
             try:
                 agora = time.time()
                 segundos_atuais = agora % 60
                 espera = 60 - segundos_atuais
                 await asyncio.sleep(espera + 1.0) 
-                await self.analyze_market()
+                
+                resultado = await self.analyze_market()
+                if resultado:
+                    direction, log_msg = resultado
+                    await self.broker.place_order_and_monitor(symbol=self.symbol, direction=direction, amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
                 
             except Exception as e:
                 logger.error(f"[{self.name}] Erro inesperado no loop principal: {e}")

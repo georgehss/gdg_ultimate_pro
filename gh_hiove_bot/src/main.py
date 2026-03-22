@@ -7,6 +7,7 @@ from scraper.hiove_scraper import HioveScraper
 from strategies.rsi_strategy import RSIStrategy
 from strategies.ma_cross_strategy import MACrossStrategy
 from strategies.engulf_ma_strategy import EngulfMAStrategy
+from strategies.consensus_strategy import ConsensusStrategy
 from core.database import init_db
 
 # IMPORTANTE: Importa o novo servidor que acabámos de criar
@@ -109,6 +110,17 @@ async def main():
             
         strategy_task = asyncio.create_task(manager.start_all())
         await tg_bot.send_alert("✅ Estratégia automática de Engolfo MA iniciada!")
+
+    elif config["mode"] == "strat_consensus":
+        logger.info("A preparar Estratégia de Consenso (3 em 1)...")
+        for ativo in config["assets"]:
+            strat = ConsensusStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=60)
+            strat.trade_amount = config["amount"]
+            strat.trade_duration = config["duration"]
+            manager.add_strategy(strat)
+            
+        strategy_task = asyncio.create_task(manager.start_all())
+        await tg_bot.send_alert("✅ Estratégia de Consenso (As 3 Juntas) iniciada!")
 
     elif config["mode"] == "live":
         # MODO 3: SINAIS DO MT5 (WEBHOOK)

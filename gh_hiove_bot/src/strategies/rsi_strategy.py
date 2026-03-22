@@ -121,16 +121,16 @@ class RSIStrategy(BaseStrategy):
             if is_buy:
                 self.last_signal = "BUY"
                 self.last_signal_time = current_candle_time
-                log_msg = f"⚡ [PRO RSI] COMPRA em {self.symbol}! Retração a favor da tendência (EMA > SMMA) com RSI ({rsi1:.1f}) e vela forte confirmada."
+                log_msg = f"⚡ [PRO RSI] COMPRA em {self.symbol}!"
                 logger.info(log_msg)
-                await self.broker.place_order_and_monitor(symbol=self.symbol, direction="BUY", amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
+                return "BUY", log_msg
                 
             elif is_sell:
                 self.last_signal = "SELL"
                 self.last_signal_time = current_candle_time
-                log_msg = f"⚡ [PRO RSI] VENDA em {self.symbol}! Retração a favor da tendência (EMA < SMMA) com RSI ({rsi1:.1f}) e vela forte confirmada."
+                log_msg = f"⚡ [PRO RSI] VENDA em {self.symbol}!"
                 logger.info(log_msg)
-                await self.broker.place_order_and_monitor(symbol=self.symbol, direction="SELL", amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
+                return "SELL", log_msg
                 
         except Exception as e:
             logger.error(f"[{self.name}] Erro na estratégia RSI Pro: {e}")
@@ -148,6 +148,11 @@ class RSIStrategy(BaseStrategy):
                 segundos_atuais = agora % 60
                 espera = 60 - segundos_atuais
                 await asyncio.sleep(espera + 1.0) 
-                await self.analyze_market()
+                
+                resultado = await self.analyze_market()
+                if resultado:
+                    direction, log_msg = resultado
+                    await self.broker.place_order_and_monitor(symbol=self.symbol, direction=direction, amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
+                    
             except Exception as e:
                 logger.error(f"[{self.name}] Erro no loop principal: {e}")

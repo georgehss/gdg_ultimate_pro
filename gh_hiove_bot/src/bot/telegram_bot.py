@@ -78,6 +78,7 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("📊 Estratégia RSI", callback_data='strat_strat_rsi')],
                 [InlineKeyboardButton("📊 Estratégia MA Cross", callback_data='strat_strat_ma')],
                 [InlineKeyboardButton("📊 Estratégia Engolfo MA", callback_data='strat_strat_engulf')],
+                [InlineKeyboardButton("🤝 Consenso (As 3 Juntas)", callback_data='strat_strat_consensus')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='strat_back')]
             ]
             

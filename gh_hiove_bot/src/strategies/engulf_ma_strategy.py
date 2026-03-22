@@ -127,15 +127,15 @@ class EngulfMAStrategy(BaseStrategy):
             
             if is_buy:
                 self.last_signal_time = current_candle_time
-                log_msg = f"🔥 [PRO] COMPRA: {bullish_pattern} validado em {self.symbol}! Rompeu EMA {self.ma_period}, EMA acima da SMMA {self.long_ma_period}, RSI = {rsi1:.1f} e boa Volatilidade."
+                log_msg = f"🔥 [PRO] COMPRA: {bullish_pattern} validado em {self.symbol}!"
                 logger.info(log_msg)
-                await self.broker.place_order_and_monitor(symbol=self.symbol, direction="BUY", amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
+                return "BUY", log_msg
                 
             elif is_sell:
                 self.last_signal_time = current_candle_time
-                log_msg = f"🔥 [PRO] VENDA: {bearish_pattern} validado em {self.symbol}! Rompeu EMA {self.ma_period}, EMA abaixo da SMMA {self.long_ma_period}, RSI = {rsi1:.1f} e boa Volatilidade."
+                log_msg = f"🔥 [PRO] VENDA: {bearish_pattern} validado em {self.symbol}!"
                 logger.info(log_msg)
-                await self.broker.place_order_and_monitor(symbol=self.symbol, direction="SELL", amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
+                return "SELL", log_msg
                 
         except Exception as e:
             logger.error(f"[{self.name}] Erro na estratégia Engolfo MA Pro: {e}")
@@ -152,7 +152,12 @@ class EngulfMAStrategy(BaseStrategy):
                 segundos_atuais = agora % 60
                 espera = 60 - segundos_atuais
                 await asyncio.sleep(espera + 1.0) 
-                await self.analyze_market()
+                
+                # Executa a ordem se estiver a rodar sozinha
+                resultado = await self.analyze_market()
+                if resultado:
+                    direction, log_msg = resultado
+                    await self.broker.place_order_and_monitor(symbol=self.symbol, direction=direction, amount=self.trade_amount, duration=self.trade_duration, telegram_alert_cb=self.telegram_alert)
                 
             except Exception as e:
                 logger.error(f"[{self.name}] Erro inesperado no loop principal: {e}")
