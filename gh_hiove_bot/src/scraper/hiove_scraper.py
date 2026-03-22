@@ -243,13 +243,16 @@ class HioveScraper:
                 # ==========================================
                 payout_str = "N/A"
                 try:
-                    # Procura o elemento HTML que contém a classe parcial do Payout
-                    payout_locator = page.locator('span[class*="_payout-value_"]').first
-                    if await payout_locator.is_visible(timeout=1000):
+                    # Usa uma busca focada no símbolo de percentagem dentro do painel lateral
+                    xpath_payout = '//*[@id="sider-trade"]//span[contains(text(), "%")]'
+                    payout_locator = page.locator(f'xpath={xpath_payout}').first
+                    
+                    # Aumentamos o timeout para garantir que dá tempo do site carregar a %
+                    if await payout_locator.is_visible(timeout=2500):
                         payout_str = await payout_locator.inner_text()
                 except Exception as e:
                     logger.debug(f"Aviso: Não foi possível ler o payout: {e}")
-                
+
                 # ==========================================
                 # SINCRONIZAÇÃO COM O RELÓGIO DA CORRETORA
                 # ==========================================
@@ -358,11 +361,11 @@ class HioveScraper:
             # ==========================================
             logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando a corretora actualizar o histórico...")
             # Tempo drasticamente reduzido para agilizar o Martingale
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(2.0)
             # 1. Clica na aba de 'Histórico' para garantir que as ordens fechadas aparecem
             xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
             await page.locator(f'xpath={xpath_btn_historico}').click(timeout=5000)
-            await asyncio.sleep(0.5) # Dá um tempinho para a lista carregar
+            await asyncio.sleep(1.2) # Dá um tempinho para a lista carregar
             
             # 2. Localiza os itens e FILTRA pelo ativo específico daquela ordem
             xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//li'
