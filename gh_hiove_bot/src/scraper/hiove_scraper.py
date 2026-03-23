@@ -361,7 +361,7 @@ class HioveScraper:
             # ==========================================
             logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando a corretora actualizar o histórico...")
             # Tempo drasticamente reduzido para agilizar o Martingale
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(2.5)
             # 1. Clica na aba de 'Histórico' para garantir que as ordens fechadas aparecem
             xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
             await page.locator(f'xpath={xpath_btn_historico}').click(timeout=5000)
