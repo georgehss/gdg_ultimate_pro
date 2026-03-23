@@ -58,14 +58,14 @@ class TradingTelegramBot:
         keyboard = []
 
         if self.setup_step == "account":
-            text = "🤖 *Passo 1/5: Tipo de Conta*\nOnde deseja operar?"
+            text = "🤖 *Tipo de Conta*\nOnde deseja operar?"
             keyboard = [
                 [InlineKeyboardButton("🟢 Conta DEMO", callback_data='acc_demo')],
                 [InlineKeyboardButton("🔴 Conta REAL", callback_data='acc_real')]
             ]
             
         elif self.setup_step == "mode":
-            text = "⚙️ *Passo 2/5: Modo de Operação*\nEscolha a lógica do robô:"
+            text = "⚙️ *Modo de Operação*\nEscolha a lógica do robô:"
             keyboard = [
                 [InlineKeyboardButton("📈 Estratégias Internas", callback_data='mod_strategy_menu')],
                 [InlineKeyboardButton("📡 Sinais MT5 (Webhook)", callback_data='mod_live')],
@@ -73,7 +73,7 @@ class TradingTelegramBot:
             ]
             
         elif self.setup_step == "strategy_type":
-            text = "🧠 *Passo 2.1/5: Escolha a Estratégia*\nQual estratégia o robô deve usar?"
+            text = "🧠 *Escolha a Estratégia*\nQual estratégia o robô deve usar?"
             keyboard = [
                 [InlineKeyboardButton("📊 Estratégia RSI", callback_data='strat_strat_rsi')],
                 [InlineKeyboardButton("📊 Estratégia MA Cross", callback_data='strat_strat_ma')],
@@ -83,7 +83,7 @@ class TradingTelegramBot:
             ]
             
         elif self.setup_step == "assets":
-            text = "🪙 *Passo 3/5: Ativos*\nClique nos ativos que deseja operar e depois em Continuar:"
+            text = "🪙 *Ativos*\nClique nos ativos que deseja operar e depois em Continuar:"
             # Adiciona um "✅" visual se o ativo já estiver na lista
             xrp_text = "✅ XRP" if "XRP/USDT" in self.user_config["assets"] else "XRP"
             eth_text = "✅ ETH" if "ETH/USDT" in self.user_config["assets"] else "ETH"
@@ -99,7 +99,7 @@ class TradingTelegramBot:
             ]
 
         elif self.setup_step == "duration":
-            text = "⏳ *Passo 4/5: Tempo de Operação*\nQual a duração de cada entrada?"
+            text = "⏳ *Tempo de Operação*\nQual a duração de cada entrada?"
             keyboard = [
                 [InlineKeyboardButton("1 Minuto", callback_data='dur_01:00'),
                  InlineKeyboardButton("5 Minutos", callback_data='dur_05:00')],
@@ -107,7 +107,7 @@ class TradingTelegramBot:
             ]
             
         elif self.setup_step == "amount":
-            text = "💵 *Passo 5/7: Valor de Entrada*\nQuanto investir por operação?"
+            text = "💵 *Valor de Entrada*\nQuanto investir por operação?"
             keyboard = [
                 [InlineKeyboardButton("$ 1", callback_data='amt_1'),
                  InlineKeyboardButton("$ 5", callback_data='amt_5')],
@@ -116,7 +116,7 @@ class TradingTelegramBot:
             ]
 
         elif self.setup_step == "martingale_type":
-            text = "🔄 *Passo 6/10: Martingale*\nDeseja utilizar recuperação de perdas (Martingale)?"
+            text = "🔄 *Martingale*\nDeseja utilizar recuperação de perdas (Martingale)?"
             keyboard = [
                 [InlineKeyboardButton("❌ Nenhum", callback_data='mgtype_Nenhum')],
                 [InlineKeyboardButton("🕯️ Na Próxima Vela", callback_data='mgtype_Vela')],
@@ -124,7 +124,7 @@ class TradingTelegramBot:
             ]
 
         elif self.setup_step == "martingale_steps":
-            text = "🔢 *Passo 7/10: Passos do Martingale*\nQuantas vezes o bot deve tentar recuperar?"
+            text = "🔢 *Passos do Martingale*\nQuantas vezes o bot deve tentar recuperar?"
             keyboard = [
                 [InlineKeyboardButton("1 Passo", callback_data='mgstep_1'),
                  InlineKeyboardButton("2 Passos", callback_data='mgstep_2')],
@@ -132,7 +132,7 @@ class TradingTelegramBot:
             ]
 
         elif self.setup_step == "martingale_multiplier":
-            text = "✖️ *Passo 8/10: Multiplicador*\nQual o fator de multiplicação de banca do MG?"
+            text = "✖️ *Multiplicador*\nQual o fator de multiplicação de banca do MG?"
             keyboard = [
                 [InlineKeyboardButton("2.0 x", callback_data='mgmult_2.0'),
                  InlineKeyboardButton("2.2 x", callback_data='mgmult_2.2')],
@@ -141,7 +141,7 @@ class TradingTelegramBot:
             ]
 
         elif self.setup_step == "take_profit":
-            text = "🎯 *Passo 6/7: Meta de Lucro (Take Profit)*\nAo atingir que lucro o bot deve parar hoje?"
+            text = "🎯 *Meta de Lucro (Take Profit)*\nAo atingir que lucro o bot deve parar hoje?"
             keyboard = [
                 [InlineKeyboardButton("$ 10", callback_data='tp_10.0'),
                  InlineKeyboardButton("$ 20", callback_data='tp_20.0')],
@@ -150,7 +150,7 @@ class TradingTelegramBot:
             ]
 
         elif self.setup_step == "stop_loss":
-            text = "🛑 *Passo 7/7: Limite de Perda (Stop Loss)*\nAo atingir que prejuízo o bot deve parar hoje para proteger a banca?"
+            text = "🛑 *Limite de Perda (Stop Loss)*\nAo atingir que prejuízo o bot deve parar hoje para proteger a banca?"
             keyboard = [
                 [InlineKeyboardButton("-$ 10", callback_data='sl_-10.0'),
                  InlineKeyboardButton("-$ 20", callback_data='sl_-20.0')],
