@@ -6,34 +6,46 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class MACrossStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, 
-                 fast_period=9, slow_period=21, long_ma_period=100, rsi_period=14,
-                 use_slope=True, slope_lookback=3,
-                 use_atr_sep=True, atr_period=14, atr_sep_mult=0.15,
-                 cooldown_bars=3):
-        
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado"):
         super().__init__(name=f"MACrossPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe = timeframe  
+        self.profile = profile
         
-        # Parâmetros das Médias e RSI
-        self.fast_period = fast_period
-        self.slow_period = slow_period
-        self.long_ma_period = long_ma_period 
-        self.rsi_period = rsi_period 
-        
-        # Filtros de Ruído
-        self.use_slope = use_slope
-        self.slope_lookback = slope_lookback
-        self.use_atr_sep = use_atr_sep
-        self.atr_period = atr_period
-        self.atr_sep_mult = atr_sep_mult
-        self.cooldown_bars = cooldown_bars
+        # Aplica as configurações baseadas no perfil escolhido
+        self._apply_profile_settings()
         
         # Variáveis de Estado
-        self.bars_since_signal = cooldown_bars 
+        self.bars_since_signal = self.cooldown_bars 
         self.trade_amount = 1.0
         self.trade_duration = "01:00"
+
+    def _apply_profile_settings(self):
+        # Filtros fixos da estratégia
+        self.rsi_period = 14
+        self.use_slope = True
+        self.slope_lookback = 3
+        self.use_atr_sep = True
+        self.atr_period = 14
+
+        if self.profile == "Conservador":
+            self.fast_period = 14
+            self.slow_period = 50
+            self.long_ma_period = 200
+            self.atr_sep_mult = 0.20
+            self.cooldown_bars = 5
+        elif self.profile == "Agressivo":
+            self.fast_period = 5
+            self.slow_period = 13
+            self.long_ma_period = 50
+            self.atr_sep_mult = 0.05
+            self.cooldown_bars = 1
+        else: # Balanceado ou Customizado
+            self.fast_period = 9
+            self.slow_period = 21
+            self.long_ma_period = 100
+            self.atr_sep_mult = 0.15
+            self.cooldown_bars = 3
 
     async def analyze_market(self):
         # NOVO: Atualizado o log

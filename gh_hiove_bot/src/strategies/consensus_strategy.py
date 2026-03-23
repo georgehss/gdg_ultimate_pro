@@ -7,26 +7,17 @@ from .engulf_ma_strategy import EngulfMAStrategy
 logger = logging.getLogger(__name__)
 
 class ConsensusStrategy(BaseStrategy):
-    # NOVO: Adicionados os parâmetros rsi_kwargs, ma_kwargs e engulf_kwargs
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, min_votes_required=1,
-                 rsi_kwargs=None, ma_kwargs=None, engulf_kwargs=None):
-        
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, min_votes_required=1, profile="Balanceado"):
         super().__init__(name=f"Consensus_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe = timeframe
         self.min_votes_required = min_votes_required 
         
-        # Garante que, se vier vazio, seja um dicionário vazio para não dar erro no **
-        rsi_kwargs = rsi_kwargs or {}
-        ma_kwargs = ma_kwargs or {}
-        engulf_kwargs = engulf_kwargs or {}
+        # Instancia as 3 estratégias silenciosamente repassando o perfil escolhido!
+        self.strat_rsi = RSIStrategy(broker, telegram_alert_cb, symbol, timeframe, profile=profile)
+        self.strat_ma = MACrossStrategy(broker, telegram_alert_cb, symbol, timeframe, profile=profile)
+        self.strat_engulf = EngulfMAStrategy(broker, telegram_alert_cb, symbol, timeframe, profile=profile)
         
-        # Instancia as 3 estratégias silenciosamente repassando as configurações do perfil escolhido
-        self.strat_rsi = RSIStrategy(broker, telegram_alert_cb, symbol, timeframe, **rsi_kwargs)
-        self.strat_ma = MACrossStrategy(broker, telegram_alert_cb, symbol, timeframe, **ma_kwargs)
-        self.strat_engulf = EngulfMAStrategy(broker, telegram_alert_cb, symbol, timeframe, **engulf_kwargs)
-        
-        # NOVO: Silencia os alertas do Telegram das estratégias filhas para evitar Spam
         async def dummy_alert(msg): pass
         self.strat_rsi.telegram_alert = dummy_alert
         self.strat_ma.telegram_alert = dummy_alert

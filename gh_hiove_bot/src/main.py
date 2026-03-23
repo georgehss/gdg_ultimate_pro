@@ -70,35 +70,8 @@ async def main():
     tg_bot.manager = manager
     tg_bot.broker = broker
 
-    # ==========================================
-    # DEFINIÇÃO DOS PERFIS DE ESTRATÉGIA
-    # ==========================================
+    # Captura o perfil selecionado (se não existir, usa Balanceado por segurança)
     perfil_escolhido = config.get("profile", "Balanceado")
-    
-    # Parâmetros para RSI
-    rsi_profiles = {
-        "Conservador": {"rsi_period": 14, "rsi_overbought": 75, "rsi_oversold": 25, "long_ma_period": 200},
-        "Balanceado":  {"rsi_period": 14, "rsi_overbought": 70, "rsi_oversold": 30, "long_ma_period": 100},
-        "Agressivo":   {"rsi_period": 9,  "rsi_overbought": 65, "rsi_oversold": 35, "long_ma_period": 50},
-        "Customizado": {} # Pega os defaults da classe
-    }
-    
-    # Parâmetros para MA Cross
-    ma_profiles = {
-        "Conservador": {"fast_period": 14, "slow_period": 50, "cooldown_bars": 5, "atr_sep_mult": 0.20},
-        "Balanceado":  {"fast_period": 9,  "slow_period": 21, "cooldown_bars": 3, "atr_sep_mult": 0.15},
-        "Agressivo":   {"fast_period": 5,  "slow_period": 13, "cooldown_bars": 1, "atr_sep_mult": 0.05},
-        "Customizado": {}
-    }
-
-    # Parâmetros para Engolfo
-    engulf_profiles = {
-        "Conservador": {"ma_period": 14, "long_ma_period": 100, "epsilon_price": 0.0001},
-        "Balanceado":  {"ma_period": 8,  "long_ma_period": 59,  "epsilon_price": 0.0},
-        "Agressivo":   {"ma_period": 5,  "long_ma_period": 21,  "epsilon_price": -0.0001}, # Aceita engolfos quase imperfeitos
-        "Customizado": {}
-    }
-    # ==========================================
 
     # ---------------------------------------------------------
     # DECISÃO DO MODO DE OPERAÇÃO (ESTRATÉGIA INTERNA OU MT5)
@@ -107,68 +80,48 @@ async def main():
     strategy_task = None
 
     if config["mode"] == "strat_rsi" or config["mode"] == "strategy":
-        # MODO 1: Estratégia de RSI
         logger.info(f"A preparar Estratégia RSI (Perfil: {perfil_escolhido})...")
-        kwargs = rsi_profiles.get(perfil_escolhido, {})
         for ativo in config["assets"]:
-            strat = RSIStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=60, **kwargs)
+            strat = RSIStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=60, profile=perfil_escolhido)
             strat.trade_amount = config["amount"]
             strat.trade_duration = config["duration"]
             manager.add_strategy(strat)
             
         strategy_task = asyncio.create_task(manager.start_all())
-        await tg_bot.send_alert("✅ Estratégia automática de RSI iniciada!")
+        await tg_bot.send_alert(f"✅ Estratégia RSI ({perfil_escolhido}) iniciada!")
 
     elif config["mode"] == "strat_ma":
-        # MODO 2: Estratégia de MA Cross
         logger.info(f"A preparar Estratégia MA Cross (Perfil: {perfil_escolhido})...")
-        kwargs = ma_profiles.get(perfil_escolhido, {})
         for ativo in config["assets"]:
-            strat = MACrossStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=60, **kwargs)
+            strat = MACrossStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=60, profile=perfil_escolhido)
             strat.trade_amount = config["amount"]
             strat.trade_duration = config["duration"]
             manager.add_strategy(strat)
             
         strategy_task = asyncio.create_task(manager.start_all())
-        await tg_bot.send_alert("✅ Estratégia automática de MA Cross iniciada!")
+        await tg_bot.send_alert(f"✅ Estratégia MA Cross ({perfil_escolhido}) iniciada!")
 
     elif config["mode"] == "strat_engulf":
-        logger.info(f"A preparar Estratégia de Engolfo MA (Perfil: {perfil_escolhido})...")
-        kwargs = engulf_profiles.get(perfil_escolhido, {})
+        logger.info(f"A preparar Estratégia Engolfo MA (Perfil: {perfil_escolhido})...")
         for ativo in config["assets"]:
-            strat = EngulfMAStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=60, **kwargs)
+            strat = EngulfMAStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=60, profile=perfil_escolhido)
             strat.trade_amount = config["amount"]
             strat.trade_duration = config["duration"]
             manager.add_strategy(strat)
             
         strategy_task = asyncio.create_task(manager.start_all())
-        await tg_bot.send_alert("✅ Estratégia automática de Engolfo MA iniciada!")
+        await tg_bot.send_alert(f"✅ Estratégia Engolfo MA ({perfil_escolhido}) iniciada!")
 
     elif config["mode"] == "strat_consensus":
         logger.info(f"A preparar Estratégia de Consenso (Perfil: {perfil_escolhido})...")
-        
-        # Pega as configurações de todas as estratégias com base no perfil
-        r_kwargs = rsi_profiles.get(perfil_escolhido, {})
-        m_kwargs = ma_profiles.get(perfil_escolhido, {})
-        e_kwargs = engulf_profiles.get(perfil_escolhido, {})
-
         for ativo in config["assets"]:
-            # Passa os 3 pacotes de parâmetros para a classe de Consenso
-            strat = ConsensusStrategy(
-                broker, 
-                tg_bot.send_alert, 
-                symbol=ativo, 
-                timeframe=60,
-                rsi_kwargs=r_kwargs,
-                ma_kwargs=m_kwargs,
-                engulf_kwargs=e_kwargs
-            )
+            strat = ConsensusStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=60, profile=perfil_escolhido)
             strat.trade_amount = config["amount"]
             strat.trade_duration = config["duration"]
             manager.add_strategy(strat)
             
         strategy_task = asyncio.create_task(manager.start_all())
-        await tg_bot.send_alert(f"✅ Estratégia automática de Consenso ({perfil_escolhido}) iniciada!")
+        await tg_bot.send_alert(f"✅ Estratégia de Consenso ({perfil_escolhido}) iniciada!")
 
     elif config["mode"] == "live":
         # MODO 3: SINAIS DO MT5 (WEBHOOK)

@@ -6,30 +6,46 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class RSIStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, 
-                 rsi_period=14, rsi_overbought=70, rsi_oversold=30, 
-                 long_ma_period=100, ema_period=9,
-                 entry_mode="CROSSBACK", confirm_candle=True):
-        
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado"):
         super().__init__(name=f"RSIPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe = timeframe
+        self.profile = profile
         
-        # Parâmetros Base RSI
-        self.rsi_period = rsi_period
-        self.rsi_overbought = rsi_overbought
-        self.rsi_oversold = rsi_oversold
-        self.entry_mode = entry_mode.upper() 
-        self.confirm_candle = confirm_candle
-        
-        # Filtros Pro (Tendência e Volatilidade)
-        self.long_ma_period = long_ma_period
-        self.ema_period = ema_period
+        # Aplica as configurações baseadas no perfil escolhido
+        self._apply_profile_settings()
         
         self.trade_amount = 1.0
         self.trade_duration = "01:00"
         self.last_signal = None 
         self.last_signal_time = None
+
+    def _apply_profile_settings(self):
+        """Define os parâmetros internos com base no perfil escolhido."""
+        if self.profile == "Conservador":
+            self.rsi_period = 14
+            self.rsi_overbought = 75
+            self.rsi_oversold = 25
+            self.long_ma_period = 200
+            self.ema_period = 9
+            self.entry_mode = "CROSSBACK"
+            self.confirm_candle = True
+        elif self.profile == "Agressivo":
+            self.rsi_period = 9
+            self.rsi_overbought = 65
+            self.rsi_oversold = 35
+            self.long_ma_period = 50
+            self.ema_period = 5
+            self.entry_mode = "TOUCH"
+            self.confirm_candle = False
+        else: # Balanceado ou Customizado (Valores Padrão)
+            self.rsi_period = 14
+            self.rsi_overbought = 70
+            self.rsi_oversold = 30
+            self.long_ma_period = 100
+            self.ema_period = 9
+            self.entry_mode = "CROSSBACK"
+            self.confirm_candle = True
 
     async def analyze_market(self):
         # NOVO: Atualizado o log para refletir os novos indicadores

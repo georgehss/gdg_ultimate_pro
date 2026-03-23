@@ -7,23 +7,35 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class EngulfMAStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, 
-                 ma_period=8, long_ma_period=59, rsi_period=14, ma_entry_mode="BREAK", epsilon_price=0.0):
-        
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado"):
         super().__init__(name=f"PriceActionPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe = timeframe
+        self.profile = profile
         
-        # Parâmetros da Estratégia
-        self.ma_period = ma_period
-        self.long_ma_period = long_ma_period 
-        self.rsi_period = rsi_period
-        self.ma_entry_mode = ma_entry_mode.upper() 
-        self.epsilon = epsilon_price 
+        # Aplica as configurações baseadas no perfil escolhido
+        self._apply_profile_settings()
         
         self.trade_amount = 1.0
         self.trade_duration = "01:00"
         self.last_signal_time = None 
+
+    def _apply_profile_settings(self):
+        self.rsi_period = 14
+        self.ma_entry_mode = "BREAK"
+        
+        if self.profile == "Conservador":
+            self.ma_period = 14
+            self.long_ma_period = 100
+            self.epsilon = 0.0001 # Exige engolfo perfeito com sobra
+        elif self.profile == "Agressivo":
+            self.ma_period = 5
+            self.long_ma_period = 21
+            self.epsilon = -0.0001 # Aceita quase-engolfo se o volume for bom
+        else: # Balanceado ou Customizado
+            self.ma_period = 8
+            self.long_ma_period = 59
+            self.epsilon = 0.0
 
     async def analyze_market(self):
         # NOVO: Atualizei o log para mostrar que o ADX e Volume estão rodando
