@@ -19,8 +19,8 @@ class MACrossStrategy(BaseStrategy):
         # Parâmetros das Médias e RSI
         self.fast_period = fast_period
         self.slow_period = slow_period
-        self.long_ma_period = long_ma_period # Média longa para macrotendência
-        self.rsi_period = rsi_period # Período do RSI para exaustão
+        self.long_ma_period = long_ma_period 
+        self.rsi_period = rsi_period 
         
         # Filtros de Ruído
         self.use_slope = use_slope
@@ -36,9 +36,9 @@ class MACrossStrategy(BaseStrategy):
         self.trade_duration = "01:00"
 
     async def analyze_market(self):
-        logger.info(f"[{self.name}] A processar MA Cross Pro (EMA {self.fast_period}/{self.slow_period}) + SMMA {self.long_ma_period} + RSI...")
+        # NOVO: Atualizado o log
+        logger.info(f"[{self.name}] A processar MA Cross Pro (EMA {self.fast_period}/{self.slow_period}) + SMMA + RSI + ADX + Volume...")
         
-        # Garante histórico suficiente para a Média Longa
         limit_klines = max(150, self.long_ma_period + 50)
         klines = await self.broker.get_klines(symbol=self.symbol, interval="1m", limit=limit_klines)
         
@@ -48,15 +48,24 @@ class MACrossStrategy(BaseStrategy):
             
         try:
             df = pd.DataFrame(klines)
+            df['openPrice'] = pd.to_numeric(df['openPrice'])
             df['closePrice'] = pd.to_numeric(df['closePrice'])
             df['highPrice'] = pd.to_numeric(df['highPrice'])
             df['lowPrice'] = pd.to_numeric(df['lowPrice'])
             
+            # NOVO: Converte o Volume
+            df['volume'] = pd.to_numeric(df['volume'])
+            
             # 1. Calcula as EMAs, SMMA e RSI
             df['ema_fast'] = ta.ema(df['closePrice'], length=self.fast_period)
             df['ema_slow'] = ta.ema(df['closePrice'], length=self.slow_period)
-            df['smma_long'] = ta.rma(df['closePrice'], length=self.long_ma_period) # SMMA Longa
-            df['rsi'] = ta.rsi(df['closePrice'], length=self.rsi_period) # RSI
+            df['smma_long'] = ta.rma(df['closePrice'], length=self.long_ma_period) 
+            df['rsi'] = ta.rsi(df['closePrice'], length=self.rsi_period) 
+            
+            # NOVO: Calcula o ADX e a Média de Volume (SMA 20)
+            adx_df = ta.adx(df['highPrice'], df['lowPrice'], df['closePrice'], length=14)
+            df['adx'] = adx_df[adx_df.columns[0]]
+            df['vol_sma'] = ta.sma(df['volume'], length=20)
             
             # 2. Calcula o ATR
             if self.use_atr_sep:
@@ -76,10 +85,16 @@ class MACrossStrategy(BaseStrategy):
             s1 = df['ema_slow'].iloc[last_closed]
             s2 = df['ema_slow'].iloc[prev_closed]
             
-            # Dados dos Novos Filtros (SMMA e RSI)
+            # Dados dos Novos Filtros (SMMA, RSI, Volume, ADX)
             smma1 = df['smma_long'].iloc[last_closed]
             rsi1 = df['rsi'].iloc[last_closed]
             c1 = df['closePrice'].iloc[last_closed]
+            o1 = df['openPrice'].iloc[last_closed]
+            
+            # NOVO: Pega o ADX, o Volume da vela atual e a Média de Volume
+            adx1 = df['adx'].iloc[last_closed]
+            v1 = df['volume'].iloc[last_closed]
+            vol_sma1 = df['vol_sma'].iloc[last_closed]
             
             # Lógica Base de Cruzamento
             cross_up = (f2 <= s2) and (f1 > s1)
@@ -109,19 +124,40 @@ class MACrossStrategy(BaseStrategy):
 
             # --- NOVOS FILTROS INSTITUCIONAIS ---
             
+            # NOVO: Filtro de Ignição (Volume e Ação de Preço)
+            # Confirma que a vela do cruzamento fechou a favor e teve volume acima da média
+            candle_ok_buy = (c1 > o1)
+            candle_ok_sell = (c1 < o1)
+            volume_ok = v1 > vol_sma1 # Volume atual maior que a média das últimas 20 velas
+            
+            if cross_up and not (candle_ok_buy and volume_ok):
+                cross_up = False
+                logger.debug(f"[{self.name}] BUY bloqueado: Falta de volume de ignição ou vela contrária.")
+                
+            if cross_down and not (candle_ok_sell and volume_ok):
+                cross_down = False
+                logger.debug(f"[{self.name}] SELL bloqueado: Falta de volume de ignição ou vela contrária.")
+
+            # NOVO: Filtro de ADX (Força da Tendência)
+            trend_strength_ok = adx1 > 20
+            
+            if cross_up and not trend_strength_ok:
+                cross_up = False
+                logger.debug(f"[{self.name}] BUY bloqueado: ADX fraco ({adx1:.1f}) indicando lateralização.")
+                
+            if cross_down and not trend_strength_ok:
+                cross_down = False
+                logger.debug(f"[{self.name}] SELL bloqueado: ADX fraco ({adx1:.1f}) indicando lateralização.")
+
             # Filtro 3: Alinhamento de Macrotendência (SMMA)
-            # Para comprar, o preço e as médias de sinal têm de estar acima da SMMA Longa
             trend_up = (c1 > smma1) and (f1 > smma1) and (s1 > smma1)
-            # Para vender, o preço e as médias de sinal têm de estar abaixo da SMMA Longa
             trend_down = (c1 < smma1) and (f1 < smma1) and (s1 < smma1)
             
             if cross_up and not trend_up:
                 cross_up = False
-                logger.debug(f"[{self.name}] BUY bloqueado: Contra a Macrotendência (SMMA).")
                 
             if cross_down and not trend_down:
                 cross_down = False
-                logger.debug(f"[{self.name}] SELL bloqueado: Contra a Macrotendência (SMMA).")
 
             # Filtro 4: Exaustão (RSI)
             rsi_ok_buy = rsi1 < 65
@@ -129,11 +165,9 @@ class MACrossStrategy(BaseStrategy):
             
             if cross_up and not rsi_ok_buy:
                 cross_up = False
-                logger.debug(f"[{self.name}] BUY bloqueado: Mercado sobrecomprado (RSI = {rsi1:.1f}).")
                 
             if cross_down and not rsi_ok_sell:
                 cross_down = False
-                logger.debug(f"[{self.name}] SELL bloqueado: Mercado sobrevendido (RSI = {rsi1:.1f}).")
 
             # Filtro 5: Cooldown (Anti-Chop)
             if self.bars_since_signal < self.cooldown_bars:
@@ -145,13 +179,15 @@ class MACrossStrategy(BaseStrategy):
             # --- Execução de Ordens ---
             if cross_up:
                 self.bars_since_signal = 0 
-                log_msg = f"🚀 [PRO MA CROSS] COMPRA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}!"
+                # NOVO: Log melhorado para mostrar os dados de confirmação
+                log_msg = f"🚀 [PRO MA CROSS] COMPRA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}! (Vol: OK, ADX: {adx1:.1f})"
                 logger.info(log_msg)
                 return "BUY", log_msg
 
             elif cross_down:
                 self.bars_since_signal = 0 
-                log_msg = f"🚀 [PRO MA CROSS] VENDA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}!"
+                # NOVO: Log melhorado para mostrar os dados de confirmação
+                log_msg = f"🚀 [PRO MA CROSS] VENDA (EMA {self.fast_period}/{self.slow_period}) em {self.symbol}! (Vol: OK, ADX: {adx1:.1f})"
                 logger.info(log_msg)
                 return "SELL", log_msg
                 
