@@ -20,13 +20,14 @@ class TradingTelegramBot:
         # Guardará TODAS as escolhas do usuário
         self.user_config = {
             "is_demo": True,
-            "mode": "strategy", 
+            "mode": "strategy",
+            "profile": "Balanceado", 
             "assets": [],       
             "duration": "01:00",
             "amount": 1.0,
-            "martingale_type": "Nenhum",   # NOVO
-            "martingale_steps": 0,         # NOVO
-            "martingale_multiplier": 2.0,  # NOVO
+            "martingale_type": "Nenhum",   
+            "martingale_steps": 0,         
+            "martingale_multiplier": 2.0,  
             "take_profit": 50.0,
             "stop_loss": -20.0
         }
@@ -80,6 +81,15 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("📊 Estratégia Engolfo MA", callback_data='strat_strat_engulf')],
                 [InlineKeyboardButton("🤝 Consenso (As 3 Juntas)", callback_data='strat_strat_consensus')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='strat_back')]
+            ]
+
+        elif self.setup_step == "profile":
+            text = "⚖️ *Perfil de Operação*\nComo o robô deve se comportar no mercado?"
+            keyboard = [
+                [InlineKeyboardButton("🛡️ Conservador (Alta precisão, menos entradas)", callback_data='prof_Conservador')],
+                [InlineKeyboardButton("⚖️ Balanceado (Padrão)", callback_data='prof_Balanceado')],
+                [InlineKeyboardButton("🔥 Agressivo (Muitas entradas, maior risco)", callback_data='prof_Agressivo')],
+                [InlineKeyboardButton("⚙️ Customizado (Valores padrão originais)", callback_data='prof_Customizado')]
             ]
             
         elif self.setup_step == "assets":
@@ -196,16 +206,17 @@ class TradingTelegramBot:
                 
         # Passo 2.1: Submenu de Estratégias Internas
         elif data.startswith('strat_'):
-            # O ", 1" diz ao Python para apagar apenas o primeiro 'strat_' que encontrar
             strat_escolhida = data.replace('strat_', '', 1)
-            
             if strat_escolhida == "back":
-                # Botão Voltar
                 self.setup_step = "mode"
             else:
-                # Guarda a estratégia específica escolhida e segue para os ativos
                 self.user_config["mode"] = strat_escolhida
-                self.setup_step = "assets"
+                self.setup_step = "profile"
+                
+        # NOVO PASSO: Perfil de Operação
+        elif data.startswith('prof_'):
+            self.user_config["profile"] = data.split('_')[1]
+            self.setup_step = "assets"
             
         # Passo 3: Ativos
         elif data.startswith('ast_'):
@@ -268,6 +279,7 @@ class TradingTelegramBot:
                 f"🚀 *SISTEMA INICIANDO!*\n\n"
                 f"▫️ Conta: {'DEMO 🟢' if self.user_config['is_demo'] else 'REAL 🔴'}\n"
                 f"▫️ Modo: {self.user_config['mode'].upper().replace('_', ' ')}\n"
+                f"▫️ Perfil: {self.user_config['profile']}\n"
                 f"▫️ Ativos: {', '.join(self.user_config['assets'])}\n"
                 f"▫️ Tempo: {self.user_config['duration']}\n"
                 f"▫️ Valor Ordem: ${self.user_config['amount']}\n"

@@ -252,7 +252,7 @@ class HioveScraper:
                         payout_str = await payout_locator.inner_text()
                 except Exception as e:
                     logger.debug(f"Aviso: Não foi possível ler o payout: {e}")
-
+                
                 # ==========================================
                 # SINCRONIZAÇÃO COM O RELÓGIO DA CORRETORA
                 # ==========================================
