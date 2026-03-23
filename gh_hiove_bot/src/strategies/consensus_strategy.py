@@ -7,15 +7,24 @@ from .engulf_ma_strategy import EngulfMAStrategy
 logger = logging.getLogger(__name__)
 
 class ConsensusStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, min_votes_required=1):
         super().__init__(name=f"Consensus_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe = timeframe
+        
+        # NOVO: 1 = Modo Hub (Qualquer 1 serve se não houver conflito), 2 = Modo Conservador Extremo
+        self.min_votes_required = min_votes_required 
         
         # Instancia as 3 estratégias silenciosamente
         self.strat_rsi = RSIStrategy(broker, telegram_alert_cb, symbol, timeframe)
         self.strat_ma = MACrossStrategy(broker, telegram_alert_cb, symbol, timeframe)
         self.strat_engulf = EngulfMAStrategy(broker, telegram_alert_cb, symbol, timeframe)
+        
+        # NOVO: Silencia os alertas do Telegram das estratégias filhas para evitar Spam
+        async def dummy_alert(msg): pass
+        self.strat_rsi.telegram_alert = dummy_alert
+        self.strat_ma.telegram_alert = dummy_alert
+        self.strat_engulf.telegram_alert = dummy_alert
         
         self.trade_amount = 1.0
         self.trade_duration = "01:00"
@@ -28,30 +37,47 @@ class ConsensusStrategy(BaseStrategy):
             self.strat_engulf.analyze_market()
         )
 
-        votes_buy = 0
-        votes_sell = 0
+        votes_buy = []
+        votes_sell = []
 
-        # Conta os votos de cada estratégia que não devolveu "None"
-        for res in results:
+        # Nomes das estratégias para o relatório
+        strat_names = ["RSI Pro", "MA Cross Pro", "Price Action Pro"]
+
+        # Verifica quem votou no quê
+        for i, res in enumerate(results):
             if res:
                 direction, msg = res
-                if direction == "BUY": votes_buy += 1
-                elif direction == "SELL": votes_sell += 1
+                if direction == "BUY": 
+                    votes_buy.append(strat_names[i])
+                elif direction == "SELL": 
+                    votes_sell.append(strat_names[i])
 
-        # Avalia a Maioria (Harmonia e Prevenção de Conflitos)
-        if votes_buy > votes_sell:
-            return "BUY", votes_buy
-        elif votes_sell > votes_buy:
-            return "SELL", votes_sell
-        else:
-            if votes_buy > 0: # Ex: 1 BUY e 1 SELL (Conflito direto)
-                logger.info(f"[{self.name}] ⚠️ Empate/Conflito detectado (1 BUY, 1 SELL). Operação abortada por segurança.")
+        num_buy = len(votes_buy)
+        num_sell = len(votes_sell)
+
+        # NOVO: Avaliação Inteligente de Conflito Global
+        if num_buy > 0 and num_sell > 0:
+            logger.warning(f"[{self.name}] ⚠️ CONFLITO GLOBAL: {votes_buy} mandaram Comprar, mas {votes_sell} mandaram Vender. Operação abortada por segurança.")
             return None
+            
+        # NOVO: Aprovação de Compra com Relatório
+        if num_buy >= self.min_votes_required:
+            aprovadores = ", ".join(votes_buy)
+            return "BUY", num_buy, aprovadores
+            
+        # NOVO: Aprovação de Venda com Relatório
+        elif num_sell >= self.min_votes_required:
+            aprovadores = ", ".join(votes_sell)
+            return "SELL", num_sell, aprovadores
+            
+        return None
 
     async def execute(self):
         self.is_running = True
-        logger.info(f"[{self.name}] 🤝 Estratégia de CONSENSO (3 em 1) iniciada.")
+        modo_str = "Hub Sniper (1+ Votos sem conflito)" if self.min_votes_required == 1 else "Conservador Extremo (2+ Votos)"
+        logger.info(f"[{self.name}] 🤝 Orquestrador Inteligente iniciado. Modo: {modo_str}")
         
+        import time
         while self.is_running:
             try:
                 agora = time.time()
@@ -63,9 +89,24 @@ class ConsensusStrategy(BaseStrategy):
                 resultado = await self.analyze_market()
                 
                 if resultado:
-                    direction, num_votos = resultado
-                    log_msg = f"🤝 [CONSENSO] Sinal de {direction} aprovado em {self.symbol} com {num_votos} voto(s)!"
-                    logger.info(log_msg)
+                    direction, num_votos, aprovadores = resultado
+                    
+                    # NOVO: Mensagem profissional formatada para o Telegram
+                    emoji = "🟢 WIN" if direction == "BUY" else "🔴 LOSS" # Aproveitando o estilo que já usas
+                    dir_icon = "🈯️ COMPRA" if direction == "BUY" else "🈲 VENDA"
+                    
+                    log_msg = (
+                        f"🤝 *CONSENSO APROVADO!*\n"
+                        f"▫️ Ativo: {self.symbol}\n"
+                        f"▫️ Direção: {dir_icon}\n"
+                        f"▫️ Votos a favor: {num_votos}\n"
+                        f"▫️ Aprovado por: {aprovadores}"
+                    )
+                    
+                    logger.info(log_msg.replace('\n', ' | ').replace('*', ''))
+                    
+                    # O Orquestrador envia o alerta principal
+                    await self.telegram_alert(log_msg)
                     
                     # Dispara UMA ÚNICA ORDEM para a corretora
                     await self.broker.place_order_and_monitor(
