@@ -28,11 +28,12 @@ class RSIStrategy(BaseStrategy):
         
         self.trade_amount = 1.0
         self.trade_duration = "01:00"
-        self.last_signal = None # Trava de repetição
+        self.last_signal = None 
         self.last_signal_time = None
 
     async def analyze_market(self):
-        logger.info(f"[{self.name}] Analisando RSI Pro ({self.rsi_period}) + SMMA {self.long_ma_period} + Volatilidade...")
+        # NOVO: Atualizado o log para refletir os novos indicadores
+        logger.info(f"[{self.name}] Analisando RSI Pro + SMMA + Bandas de Bollinger + ADX + Volume...")
         
         limit_klines = max(150, self.long_ma_period + 50)
         klines = await self.broker.get_klines(symbol=self.symbol, interval="1m", limit=limit_klines)
@@ -44,14 +45,28 @@ class RSIStrategy(BaseStrategy):
             df = pd.DataFrame(klines)
             df['openPrice'] = pd.to_numeric(df['openPrice'])
             df['closePrice'] = pd.to_numeric(df['closePrice'])
+            df['highPrice'] = pd.to_numeric(df['highPrice'])
+            df['lowPrice'] = pd.to_numeric(df['lowPrice'])
             df['time'] = pd.to_numeric(df['time'])
             
-            # 1) Indicadores
+            # NOVO: Converte o Volume
+            df['volume'] = pd.to_numeric(df['volume'])
+            
+            # 1) Indicadores Base
             df['rsi'] = ta.rsi(df['closePrice'], length=self.rsi_period)
             df['ema'] = ta.ema(df['closePrice'], length=self.ema_period)
             df['smma_long'] = ta.rma(df['closePrice'], length=self.long_ma_period)
             
-            # Volatilidade (tamanho do corpo da vela para evitar sinais fracos)
+            # NOVO: Bandas de Bollinger (Exaustão Extrema)
+            bbands = ta.bbands(df['closePrice'], length=20, std=2.0)
+            df['bb_lower'] = bbands.iloc[:, 0] # Banda Inferior
+            df['bb_upper'] = bbands.iloc[:, 2] # Banda Superior
+            
+            # NOVO: ADX (Força da Tendência)
+            adx_df = ta.adx(df['highPrice'], df['lowPrice'], df['closePrice'], length=14)
+            df['adx'] = adx_df.iloc[:, 0]
+            
+            # Volatilidade (tamanho do corpo)
             df['body_size'] = abs(df['closePrice'] - df['openPrice'])
             df['avg_body'] = df['body_size'].rolling(window=10).mean()
             
@@ -66,69 +81,76 @@ class RSIStrategy(BaseStrategy):
             if self.last_signal_time == current_candle_time:
                 return None
                 
-            # Dados Vela 1 (Atual)
-            c1 = df['closePrice'].iloc[idx1]
-            o1 = df['openPrice'].iloc[idx1]
+            # Dados Vela 1 (Atual / Confirmação)
+            c1, o1 = df['closePrice'].iloc[idx1], df['openPrice'].iloc[idx1]
+            h1, l1 = df['highPrice'].iloc[idx1], df['lowPrice'].iloc[idx1]
             rsi1 = df['rsi'].iloc[idx1]
             ema1 = df['ema'].iloc[idx1]
             smma1 = df['smma_long'].iloc[idx1]
             body1 = df['body_size'].iloc[idx1]
             avg_body1 = df['avg_body'].iloc[idx2]
+            v1 = df['volume'].iloc[idx1]
+            adx1 = df['adx'].iloc[idx1]
             
-            # Dados Vela 2 (Anterior - Para CROSSBACK)
+            # NOVO: Dados Bandas de Bollinger e Vol Vela Anterior
+            bbl1, bbu1 = df['bb_lower'].iloc[idx1], df['bb_upper'].iloc[idx1]
+            bbl2, bbu2 = df['bb_lower'].iloc[idx2], df['bb_upper'].iloc[idx2]
+            l2, h2 = df['lowPrice'].iloc[idx2], df['highPrice'].iloc[idx2]
             rsi2 = df['rsi'].iloc[idx2]
+            v2 = df['volume'].iloc[idx2]
             
             # 2) Reset Inteligente da Trava
-            # Libera o bot para operar novamente apenas quando o RSI volta à zona "neutra" (40-60)
             if self.last_signal is not None:
                 if 40 < rsi1 < 60:
                     self.last_signal = None
                     logger.debug(f"[{self.name}] RSI neutro ({rsi1:.1f}). Trava liberada.")
             
             if self.last_signal is not None:
-                return None # Bloqueado até o RSI voltar ao normal
+                return None
 
             # 3) Lógica do RSI Extremes
             rsi_buy_signal = False
             rsi_sell_signal = False
             
             if self.entry_mode == "CROSSBACK":
-                # RSI foi abaixo de 30 na vela anterior e já voltou a subir acima de 30 nesta vela
                 rsi_buy_signal = (rsi2 <= self.rsi_oversold) and (rsi1 > self.rsi_oversold)
-                # RSI foi acima de 70 na vela anterior e já desceu abaixo de 70 nesta vela
                 rsi_sell_signal = (rsi2 >= self.rsi_overbought) and (rsi1 < self.rsi_overbought)
             else: # TOUCH
                 rsi_buy_signal = rsi1 <= self.rsi_oversold
                 rsi_sell_signal = rsi1 >= self.rsi_overbought
 
-            # 4) Confirmação da Vela (Color e Tamanho)
+            # NOVO: 4) Validação Extrema (Bandas de Bollinger + Volume + ADX)
+            # A vela atual ou a anterior tem de ter furado as Bandas para confirmar exaustão
+            bb_ok_buy = (l1 <= bbl1) or (l2 <= bbl2)
+            bb_ok_sell = (h1 >= bbu1) or (h2 >= bbu2)
+            
+            volume_ok = v1 > v2 # Confirma defesa institucional na vela de reversão
+            trend_strength_ok = adx1 > 20 # Tem de haver tendência clara para o respiro voltar
+            
+            # 5) Confirmação da Vela e Volatilidade
             candle_ok_buy = (c1 > o1) if self.confirm_candle else True
             candle_ok_sell = (c1 < o1) if self.confirm_candle else True
-            
-            # A vela de reversão não pode ser minúscula (precisa de pelo menos 70% da média recente)
             volatility_ok = body1 >= (avg_body1 * 0.7)
 
-            # 5) Filtro Institucional (Pullbacks de Tendência)
-            # A EMA atua como rastreador rápido de tendência para confirmar a SMMA
+            # 6) Filtro Institucional (Macrotendência)
             trend_up = ema1 > smma1
             trend_down = ema1 < smma1
 
-            # 6) Confluência de Ouro
-            # Comprar apenas em macrotendência de alta, no recuo do RSI, com uma vela forte de ignição
-            is_buy = rsi_buy_signal and candle_ok_buy and volatility_ok and trend_up
-            is_sell = rsi_sell_signal and candle_ok_sell and volatility_ok and trend_down
+            # 7) Confluência de Ouro Suprema
+            is_buy = rsi_buy_signal and candle_ok_buy and volatility_ok and trend_up and bb_ok_buy and volume_ok and trend_strength_ok
+            is_sell = rsi_sell_signal and candle_ok_sell and volatility_ok and trend_down and bb_ok_sell and volume_ok and trend_strength_ok
             
             if is_buy:
                 self.last_signal = "BUY"
                 self.last_signal_time = current_candle_time
-                log_msg = f"⚡ [PRO RSI] COMPRA em {self.symbol}!"
+                log_msg = f"⚡ [PRO RSI] COMPRA EXTREMA em {self.symbol}! (RSI: {rsi1:.1f} | BB: OK | Vol: OK)"
                 logger.info(log_msg)
                 return "BUY", log_msg
                 
             elif is_sell:
                 self.last_signal = "SELL"
                 self.last_signal_time = current_candle_time
-                log_msg = f"⚡ [PRO RSI] VENDA em {self.symbol}!"
+                log_msg = f"⚡ [PRO RSI] VENDA EXTREMA em {self.symbol}! (RSI: {rsi1:.1f} | BB: OK | Vol: OK)"
                 logger.info(log_msg)
                 return "SELL", log_msg
                 
