@@ -17,7 +17,7 @@ class EngulfMAStrategy(BaseStrategy):
         # Parâmetros da Estratégia
         self.ma_period = ma_period
         self.long_ma_period = long_ma_period 
-        self.rsi_period = rsi_period # Novo: Período do RSI
+        self.rsi_period = rsi_period
         self.ma_entry_mode = ma_entry_mode.upper() 
         self.epsilon = epsilon_price 
         
@@ -26,7 +26,8 @@ class EngulfMAStrategy(BaseStrategy):
         self.last_signal_time = None 
 
     async def analyze_market(self):
-        logger.info(f"[{self.name}] Analisando Price Action Pro + EMA {self.ma_period} + SMMA {self.long_ma_period} + RSI...")
+        # NOVO: Atualizei o log para mostrar que o ADX e Volume estão rodando
+        logger.info(f"[{self.name}] Analisando Price Action Pro + EMA {self.ma_period} + SMMA {self.long_ma_period} + RSI + ADX + Volume...")
         
         limit_klines = max(150, self.long_ma_period + 50)
         klines = await self.broker.get_klines(symbol=self.symbol, interval="1m", limit=limit_klines)
@@ -42,10 +43,17 @@ class EngulfMAStrategy(BaseStrategy):
             df['lowPrice'] = pd.to_numeric(df['lowPrice'])
             df['time'] = pd.to_numeric(df['time'])
             
-            # 1) Calcula os Indicadores
+            # NOVO: 1. Converte a coluna de volume da corretora
+            df['volume'] = pd.to_numeric(df['volume'])
+            
+            # 1) Calcula os Indicadores Base
             df['ema'] = ta.ema(df['closePrice'], length=self.ma_period)
             df['smma_long'] = ta.rma(df['closePrice'], length=self.long_ma_period) 
             df['rsi'] = ta.rsi(df['closePrice'], length=self.rsi_period)
+            
+            # NOVO: 2. Calcula o ADX para evitar lateralização
+            adx_df = ta.adx(df['highPrice'], df['lowPrice'], df['closePrice'], length=14)
+            df['adx'] = adx_df[adx_df.columns[0]]
             
             # Tamanho da vela (High - Low) para medir a volatilidade média das últimas 10 velas
             df['candle_size'] = df['highPrice'] - df['lowPrice']
@@ -62,16 +70,23 @@ class EngulfMAStrategy(BaseStrategy):
             if self.last_signal_time == current_candle_time:
                 return None 
             
-            # Dados Vela 1 (Sinal)
+            # Dados Vela 1 (Sinal / Recém Fechada)
             o1, c1, h1, l1 = df['openPrice'].iloc[idx1], df['closePrice'].iloc[idx1], df['highPrice'].iloc[idx1], df['lowPrice'].iloc[idx1]
             ma1 = df['ema'].iloc[idx1]
             smma_long1 = df['smma_long'].iloc[idx1]
             rsi1 = df['rsi'].iloc[idx1]
             size1 = df['candle_size'].iloc[idx1]
-            avg_size1 = df['avg_size'].iloc[idx2] # Média calculada até a vela anterior
+            avg_size1 = df['avg_size'].iloc[idx2] 
             
-            # Dados Vela 2 (Anterior)
+            # NOVO: 3. Pega o volume e o ADX da vela de sinal
+            v1 = df['volume'].iloc[idx1]
+            adx1 = df['adx'].iloc[idx1]
+            
+            # Dados Vela 2 (Anterior / Engolfada)
             o2, c2, h2, l2 = df['openPrice'].iloc[idx2], df['closePrice'].iloc[idx2], df['highPrice'].iloc[idx2], df['lowPrice'].iloc[idx2]
+            
+            # NOVO: 4. Pega o volume da vela anterior
+            v2 = df['volume'].iloc[idx2]
             
             # 2) Leitura de Corpo e Pavios
             body1 = abs(c1 - o1)
@@ -89,6 +104,10 @@ class EngulfMAStrategy(BaseStrategy):
             # Filtro de Volatilidade: A vela de sinal não pode ser "morta" (deve ter pelo menos 80% do tamanho médio recente)
             volatility_ok = size1 >= (avg_size1 * 0.8)
             
+            # NOVO: 5. Aplica as regras dos novos filtros
+            volume_ok = v1 > v2 # Volume da vela de engolfo maior que a anterior
+            trend_strength_ok = adx1 > 20 # ADX acima de 20 (Tendência clara, sem mercado lateral)
+            
             # 3) Lógica dos Padrões Gráficos
             bullish_engulf = bull1 and bear2 and (o1 <= c2 + self.epsilon) and (c1 >= o2 - self.epsilon)
             bearish_engulf = bear1 and bull2 and (o1 >= c2 - self.epsilon) and (c1 <= o2 + self.epsilon)
@@ -99,7 +118,7 @@ class EngulfMAStrategy(BaseStrategy):
             bullish_pattern = "Engolfo de Alta" if bullish_engulf else ("Martelo" if is_hammer else None)
             bearish_pattern = "Engolfo de Baixa" if bearish_engulf else ("Estrela Cadente" if is_shooting_star else None)
 
-            # 4) Alinhamento Duplo de Tendência (O segredo institucional)
+            # 4) Alinhamento Duplo de Tendência
             # A EMA Curta precisa concordar com a SMMA Longa
             trend_up = (c1 > smma_long1) and (ma1 > smma_long1)
             trend_down = (c1 < smma_long1) and (ma1 < smma_long1)
@@ -115,25 +134,27 @@ class EngulfMAStrategy(BaseStrategy):
                 ma_ok_buy = (l1 <= ma1 + self.epsilon) and (c1 > ma1 + self.epsilon)
                 ma_ok_sell = (h1 >= ma1 - self.epsilon) and (c1 < ma1 - self.epsilon)
                 
-            # 6) Filtro de Exaustão (RSI)
-            # Compra: RSI não pode estar acima de 65 (espaço para subir)
-            rsi_ok_buy = rsi1 < 65
-            # Venda: RSI não pode estar abaixo de 35 (espaço para cair)
-            rsi_ok_sell = rsi1 > 35
+            # NOVO: 6) Filtro de Exaustão (RSI) - Ajustado para Pullback
+            # Para comprar, o preço tem que ter respirado um pouco, não pode estar muito sobrecomprado
+            rsi_ok_buy = rsi1 < 55
+            # Para vender, o preço tem que ter corrigido pra cima, não pode estar muito sobrevendido
+            rsi_ok_sell = rsi1 > 45
             
-            # 7) Confluência de Sinais MÁXIMA
-            is_buy = bullish_pattern and ma_ok_buy and trend_up and rsi_ok_buy and volatility_ok
-            is_sell = bearish_pattern and ma_ok_sell and trend_down and rsi_ok_sell and volatility_ok
+            # NOVO: 7) Confluência de Sinais MÁXIMA - Inclusão do volume_ok e trend_strength_ok
+            is_buy = bullish_pattern and ma_ok_buy and trend_up and rsi_ok_buy and volatility_ok and volume_ok and trend_strength_ok
+            is_sell = bearish_pattern and ma_ok_sell and trend_down and rsi_ok_sell and volatility_ok and volume_ok and trend_strength_ok
             
             if is_buy:
                 self.last_signal_time = current_candle_time
-                log_msg = f"🔥 [PRO] COMPRA: {bullish_pattern} validado em {self.symbol}!"
+                # NOVO: Adicionado um log detalhado para você acompanhar o ADX da entrada no Telegram/Console
+                log_msg = f"🔥 [PRO] COMPRA: {bullish_pattern} validado em {self.symbol}! (Vol: OK, ADX: {adx1:.1f})"
                 logger.info(log_msg)
                 return "BUY", log_msg
                 
             elif is_sell:
                 self.last_signal_time = current_candle_time
-                log_msg = f"🔥 [PRO] VENDA: {bearish_pattern} validado em {self.symbol}!"
+                # NOVO: Adicionado um log detalhado para você acompanhar o ADX da entrada no Telegram/Console
+                log_msg = f"🔥 [PRO] VENDA: {bearish_pattern} validado em {self.symbol}! (Vol: OK, ADX: {adx1:.1f})"
                 logger.info(log_msg)
                 return "SELL", log_msg
                 
