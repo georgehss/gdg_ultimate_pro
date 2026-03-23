@@ -75,7 +75,7 @@ class WebhookServer:
             await asyncio.sleep(tempo_total_segundos + 3)
             
             # 3. O robô vai na aba de Histórico ver qual foi o resultado
-            status, lucro = await self.scraper.check_trade_result(symbol)
+            status, lucro = await self.scraper.check_trade_result(symbol, amount)
             
             # 4. Atualiza o banco de dados e avisa no Telegram
             await update_trade_result(order_id, status, lucro)

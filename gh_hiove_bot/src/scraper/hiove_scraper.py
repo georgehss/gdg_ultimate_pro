@@ -13,7 +13,8 @@ class HioveScraper:
         self.main_page = None # Usado para login e será reaproveitado
         self.playwright = None
         self.pages = {} # Dicionário para guardar a aba exclusiva de cada ativo
-        self.trade_lock = asyncio.Lock() #Trava para criar uma fila de espera de cliques simultâneos
+        self.trade_lock = asyncio.Lock() # Trava para criar uma fila de espera de cliques simultâneos
+        self.last_trade_times = {} # Memória para não ler o mesmo horário de operação duas vezes
 
     async def start(self):
         """Inicia o navegador e faz login na Hiove"""
@@ -348,67 +349,99 @@ class HioveScraper:
             logger.error(f"⚠️ Erro ao ler saldo: {e}")
             return 0.0
 
-    async def check_trade_result(self, symbol: str) -> tuple[str, float]:
-        """Abre o histórico, lê o resultado da última ordem e volta para a aba Operações"""
+    async def check_trade_result(self, symbol: str, amount: float = None) -> tuple[str, float]:
+        """Abre o histórico, varre a lista comparando Símbolo, Tempo e Valor, e evita resultados velhos."""
         page = self.pages.get(symbol)
         if not page:
             return "FALHOU", 0.0
             
         try:
-            # ==========================================
-            # CORRECÇÃO: PAUSA PARA SINCRONIZAÇÃO
-            # Aguarda segundos para a corretora processar o Win/Loss e actualizar o saldo
-            # ==========================================
-            logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando a corretora actualizar o histórico...")
-            # Tempo drasticamente reduzido para agilizar o Martingale
-            await asyncio.sleep(2.5)
-            # 1. Clica na aba de 'Histórico' para garantir que as ordens fechadas aparecem
-            xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
-            await page.locator(f'xpath={xpath_btn_historico}').click(timeout=5000)
-            await asyncio.sleep(2.5) # Dá um tempinho para a lista carregar
+            logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando atualização do histórico...")
             
-            # 2. Localiza os itens e FILTRA pelo ativo específico daquela ordem
-            xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//li'
-            # Usa o Playwright para procurar apenas os itens 'li' que contêm o texto do 'symbol' (ex: "XRP/USDT")
-            # e pega o mais recente (.first) dentro desse filtro
-            primeiro_item = page.locator(f'xpath={xpath_itens}').filter(has_text=symbol).first
-            await primeiro_item.wait_for(state="visible", timeout=5000)
-            
-            # 3. Pega o valor e a classe HTML (para saber se foi Win ou Loss)
-            elemento_h5 = primeiro_item.locator('h5')
-            texto_valor = await elemento_h5.inner_text()
-            classes_css = await elemento_h5.get_attribute('class')
-            
-            # Limpa o texto (ex: "-$5.00" ou "$9.25") para virar número (-5.00 / 9.25)
-            lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
-            
-            # 4. Decide o resultado baseado na cor do texto na plataforma!
-            if 'ant-typography-success' in classes_css:
-                status = "WIN"
-            elif 'ant-typography-danger' in classes_css:
-                status = "LOSS"
-            elif 'ant-typography-secondary' in classes_css:
-                status = "EMPATE"
-            else:
-                status = "DESCONHECIDO"
-
-            # ==========================================
-            # 5. NOVIDADE: Voltar para a aba de Operações
-            # ==========================================
-            xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
-            await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
-            await asyncio.sleep(0.5) # Pausa rápida para a transição de ecrã
-            
-            return status, lucro_bruto
+            # Loop de polling: tenta ler até 3 vezes (com pausa) caso o resultado novo ainda não tenha aparecido
+            for tentativa in range(3):
+                await asyncio.sleep(2.5) # Dá tempo para a lista carregar e a corretora processar
                 
-        except Exception as e:
-            logger.error(f"❌ Erro ao ler o histórico para {symbol}: {e}")
+                # 1. Abre a aba de Histórico
+                xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
+                await page.locator(f'xpath={xpath_btn_historico}').click(timeout=5000)
+                await asyncio.sleep(1.0)
+                
+                # 2. Localiza todos os itens de histórico carregados (li)
+                xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
+                itens = await page.locator(f'xpath={xpath_itens}').all()
+                
+                for item in itens:
+                    try:
+                        # --- A. VERIFICA O ATIVO ---
+                        elemento_titulo = item.locator('h4.ant-list-item-meta-title span')
+                        if not await elemento_titulo.is_visible(): continue
+                        texto_ativo = await elemento_titulo.inner_text()
+                        
+                        if texto_ativo != symbol:
+                            continue # Pula se não for o ativo que queremos (ex: ETH/USDT)
+                            
+                        # --- B. VERIFICA O TEMPO ---
+                        elemento_tempo = item.locator('div._meta-description_n50my_253 span').first
+                        texto_tempo = await elemento_tempo.inner_text() # Ex: "18:35 / M1"
+                        
+                        # Memória: Se este horário já foi lido antes para este ativo, é a operação anterior! Pula.
+                        if self.last_trade_times.get(symbol) == texto_tempo:
+                            continue 
+                            
+                        # --- C. VERIFICA O VALOR ---
+                        elemento_valor = item.locator('h5')
+                        texto_valor = await elemento_valor.inner_text() # Ex: "$18.50" ou "-$5.00"
+                        classes_css = await elemento_valor.get_attribute('class')
+                        
+                        lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
+                        
+                        # --- FILTRO CRUZADO DE VALOR (MUITO IMPORTANTE PARA MARTINGALE) ---
+                        # Se foi Loss, o valor descontado tem de ser exato ao amount investido agora.
+                        # Ex: Se você investiu 10, e ele tá lendo uma linha de -$5.00, ele vai ignorar por ser velha.
+                        if amount is not None and 'ant-typography-danger' in classes_css:
+                            if abs(lucro_bruto) != float(amount):
+                                continue 
+
+                        # --- DEFINIÇÃO DO RESULTADO FINAL ---
+                        if 'ant-typography-success' in classes_css:
+                            status = "WIN"
+                        elif 'ant-typography-danger' in classes_css:
+                            status = "LOSS"
+                        elif 'ant-typography-secondary' in classes_css:
+                            status = "EMPATE"
+                        else:
+                            status = "DESCONHECIDO"
+
+                        logger.info(f"🔎 Histórico Confirmado -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
+                        
+                        # Salva o tempo desta operação na memória para ignorá-la na próxima vez
+                        self.last_trade_times[symbol] = texto_tempo
+
+                        # Fecha a aba voltando para Operações
+                        xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
+                        await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
+                        await asyncio.sleep(0.5)
+                        
+                        return status, lucro_bruto
+
+                    except Exception as e:
+                        logger.debug(f"Erro ao ler linha do histórico: {e}")
+                        continue
+                        
+                # Se terminou o for dos 'itens' e não deu return, a corretora ainda não plotou a ordem nova
+                logger.info(f"🔄 [{symbol}] Resultado ainda não disponível. Atualizando lista...")
+                
+            logger.error(f"❌ [{symbol}] O resultado não apareceu no histórico após as tentativas.")
             
-            # Proteção: Tenta forçar a volta para a aba Operações mesmo se a leitura falhar
+            # Força o regresso à aba de Operações
             try:
                 xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
                 await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
-            except Exception:
-                pass
-                
+            except: pass
+            
+            return "ERRO_LEITURA", 0.0
+
+        except Exception as e:
+            logger.error(f"❌ Erro ao ler o histórico para {symbol}: {e}")
             return "ERRO_LEITURA", 0.0

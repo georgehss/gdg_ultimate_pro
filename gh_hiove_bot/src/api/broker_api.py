@@ -142,7 +142,7 @@ class HioveBrokerAPI:
             # Dorme exatamente até a virada da vela + 1 segundo
             await asyncio.sleep(espera_real + 1)
             
-            status, lucro_bruto = await self.scraper.check_trade_result(symbol)
+            status, lucro_bruto = await self.scraper.check_trade_result(symbol, amount)
             
             # ==========================================
             # 1. CONVERSÃO PARA LUCRO LÍQUIDO
