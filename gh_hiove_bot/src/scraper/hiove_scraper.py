@@ -1,4 +1,5 @@
 import asyncio, logging, re
+from datetime import datetime, timedelta
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
 logger = logging.getLogger(__name__)
@@ -349,8 +350,8 @@ class HioveScraper:
             logger.error(f"⚠️ Erro ao ler saldo: {e}")
             return 0.0
 
-    async def check_trade_result(self, symbol: str, amount: float = None) -> tuple[str, float]:
-        """Abre o histórico, varre a lista comparando Símbolo, Tempo e Valor, e evita resultados velhos."""
+    async def check_trade_result(self, symbol: str, amount: float = None, hora_sinal: str = None) -> tuple[str, float]:
+        """Abre o histórico, varre a lista comparando Símbolo, Tempo, Valor e Horário do Sinal."""
         page = self.pages.get(symbol)
         if not page:
             return "FALHOU", 0.0
@@ -358,16 +359,13 @@ class HioveScraper:
         try:
             logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando atualização do histórico...")
             
-            # Loop de polling: tenta ler até 3 vezes (com pausa) caso o resultado novo ainda não tenha aparecido
             for tentativa in range(3):
-                await asyncio.sleep(2.5) # Dá tempo para a lista carregar e a corretora processar
+                await asyncio.sleep(2.5) 
                 
-                # 1. Abre a aba de Histórico
                 xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
                 await page.locator(f'xpath={xpath_btn_historico}').click(timeout=5000)
                 await asyncio.sleep(1.0)
                 
-                # 2. Localiza todos os itens de histórico carregados (li)
                 xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
                 itens = await page.locator(f'xpath={xpath_itens}').all()
                 
@@ -379,26 +377,42 @@ class HioveScraper:
                         texto_ativo = await elemento_titulo.inner_text()
                         
                         if texto_ativo != symbol:
-                            continue # Pula se não for o ativo que queremos (ex: ETH/USDT)
+                            continue 
                             
-                        # --- B. VERIFICA O TEMPO ---
+                        # --- B. VERIFICA A MEMÓRIA DA CORRETORA ---
                         elemento_tempo = item.locator('div._meta-description_n50my_253 span').first
                         texto_tempo = await elemento_tempo.inner_text() # Ex: "18:35 / M1"
                         
-                        # Memória: Se este horário já foi lido antes para este ativo, é a operação anterior! Pula.
                         if self.last_trade_times.get(symbol) == texto_tempo:
                             continue 
+
+                        # --- C. VERIFICA O TEMPO DO SINAL (REGRA DOS 30 SEGUNDOS) ---
+                        if hora_sinal:
+                            try:
+                                # Converte o "16:30:35" num objeto de tempo
+                                hora_obj = datetime.strptime(hora_sinal, "%H:%M:%S")
+                                
+                                # Aplica a regra exata da corretora Hiove:
+                                if hora_obj.second <= 30:
+                                    # Se a entrada foi até :30, espera o minuto cheio atual (ex: 16:30)
+                                    minuto_esperado = hora_obj.strftime("%H:%M")
+                                else:
+                                    # Se passou de :30, a corretora empurra para o minuto seguinte (ex: 16:31)
+                                    minuto_esperado = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
+                                
+                                # Se o horário da linha da corretora não for EXATAMENTE o esperado, é ordem velha!
+                                if minuto_esperado not in texto_tempo:
+                                    continue
+                            except Exception as e:
+                                logger.debug(f"Erro ao calcular regra dos 30 segundos: {e}")
                             
-                        # --- C. VERIFICA O VALOR ---
+                        # --- D. VERIFICA O VALOR ---
                         elemento_valor = item.locator('h5')
-                        texto_valor = await elemento_valor.inner_text() # Ex: "$18.50" ou "-$5.00"
+                        texto_valor = await elemento_valor.inner_text() 
                         classes_css = await elemento_valor.get_attribute('class')
                         
                         lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
                         
-                        # --- FILTRO CRUZADO DE VALOR (MUITO IMPORTANTE PARA MARTINGALE) ---
-                        # Se foi Loss, o valor descontado tem de ser exato ao amount investido agora.
-                        # Ex: Se você investiu 10, e ele tá lendo uma linha de -$5.00, ele vai ignorar por ser velha.
                         if amount is not None and 'ant-typography-danger' in classes_css:
                             if abs(lucro_bruto) != float(amount):
                                 continue 
@@ -415,10 +429,8 @@ class HioveScraper:
 
                         logger.info(f"🔎 Histórico Confirmado -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
                         
-                        # Salva o tempo desta operação na memória para ignorá-la na próxima vez
                         self.last_trade_times[symbol] = texto_tempo
 
-                        # Fecha a aba voltando para Operações
                         xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
                         await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
                         await asyncio.sleep(0.5)
@@ -429,12 +441,9 @@ class HioveScraper:
                         logger.debug(f"Erro ao ler linha do histórico: {e}")
                         continue
                         
-                # Se terminou o for dos 'itens' e não deu return, a corretora ainda não plotou a ordem nova
                 logger.info(f"🔄 [{symbol}] Resultado ainda não disponível. Atualizando lista...")
                 
             logger.error(f"❌ [{symbol}] O resultado não apareceu no histórico após as tentativas.")
-            
-            # Força o regresso à aba de Operações
             try:
                 xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
                 await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)

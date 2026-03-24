@@ -59,24 +59,24 @@ class WebhookServer:
 
         """Executa a ordem e agenda a verificação do resultado pelo Histórico"""
         
-        # 1. Executa a ordem (Apenas com Ativo e Direção, muito mais rápido!)
+        # Grava o horário do sinal do MT5 ou do MG
+        hora_sinal_mt5 = datetime.now().strftime("%H:%M:%S")
+        
+        # 1. Executa a ordem
         resultado = await self.scraper.place_order(symbol, direction, amount)
         
         if resultado and "id" in resultado:
             order_id = resultado["id"]
             await log_trade(symbol, direction, amount, duration, "ABERTA", order_id)
             
-            # 2. Calcula o tempo de espera (ex: "01:00" -> 60s)
             minutos, segundos = map(int, duration.split(':'))
             tempo_total_segundos = (minutos * 60) + segundos
             
             logger.info(f"⏳ Ordem colocada. A aguardar {tempo_total_segundos + 3}s pelo fecho da vela...")
-            
-            # Espera o tempo da vela + 3 segundos de margem para a corretora atualizar a lista
             await asyncio.sleep(tempo_total_segundos + 3)
             
-            # 3. O robô vai na aba de Histórico ver qual foi o resultado
-            status, lucro = await self.scraper.check_trade_result(symbol, amount)
+            # 3. O robô vai na aba de Histórico ver qual foi o resultado, PASSANDO A HORA
+            status, lucro = await self.scraper.check_trade_result(symbol, amount, hora_sinal_mt5)
             
             # 4. Atualiza o banco de dados e avisa no Telegram
             await update_trade_result(order_id, status, lucro)
