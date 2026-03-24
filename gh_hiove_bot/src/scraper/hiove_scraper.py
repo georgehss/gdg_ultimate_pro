@@ -16,6 +16,7 @@ class HioveScraper:
         self.pages = {} # Dicionário para guardar a aba exclusiva de cada ativo
         self.trade_lock = asyncio.Lock() # Trava para criar uma fila de espera de cliques simultâneos
         self.last_trade_times = {} # Memória para não ler o mesmo horário de operação duas vezes
+        self.keep_alive_task = None # Guarda a tarefa anti-inatividade
 
     async def start(self):
         """Inicia o navegador e faz login na Hiove"""
@@ -52,17 +53,84 @@ class HioveScraper:
             
             logger.info("✅ Login efetuado com sucesso!")
             
-            # ==========================================
+            
             # NOVIDADE: TRATAMENTO DO BANNER AQUI
-            # ==========================================
             await self.handle_welcome_banner()
             
             await self.select_account_type(self.is_demo)
+            
+            # LIGA O SISTEMA ANTI-INATIVIDADE AQUI:
+            self.keep_alive_task = asyncio.create_task(self._keep_tabs_alive())
             
         except PlaywrightTimeoutError:
             logger.error("❌ Timeout: A página de login demorou muito para responder.")
         except Exception as e:
             logger.error(f"❌ Erro crítico ao tentar fazer login via Scraper: {e}")
+
+    async def _keep_tabs_alive(self):
+        """
+        Rotina de Fundo (Anti-Idle).
+        A cada 2 minutos, navega pelas abas, move o rato e acorda o navegador
+        para evitar o congelamento do relógio ou deslogue por inatividade.
+        """
+        logger.info("🛡️ Sistema Anti-Inatividade (Keep-Alive) iniciado.")
+        while True:
+            try:
+                # Roda a verificação a cada 2 minutos (120 segundos)
+                await asyncio.sleep(120)
+
+                if not self.pages:
+                    continue
+
+                # ========================================================
+                # SEGURANÇA MÁXIMA: Proteção do momento do disparo (Sniper)
+                # ========================================================
+                # O bot precisa do navegador livre na virada do minuto.
+                # Se estivermos entre o segundo 45 e o segundo 10, ele não mexe em nada!
+                agora = datetime.now()
+                if agora.second > 45 or agora.second < 10:
+                    await asyncio.sleep(15) # Espera o período crítico passar
+                    continue
+
+                logger.debug("🔄 Executando rotina Anti-Inatividade nas abas (Evitando congelamento)...")
+
+                # Pega a trava de operações para garantir que não atrapalha um trade
+                async with self.trade_lock:
+                    for symbol, page in self.pages.items():
+                        try:
+                            # 1. Traz a aba para a frente (Força o Chrome a renderizar/descongelar)
+                            await page.bring_to_front()
+                            await asyncio.sleep(0.5)
+
+                            # 2. Move o rato nativamente
+                            await page.mouse.move(150, 200)
+                            await asyncio.sleep(0.2)
+                            await page.mouse.move(500, 350)
+
+                            # 3. Dá um clique "fantasma" inofensivo num canto morto do cabeçalho
+                            xpath_area_morta = '//*[@id="header"]'
+                            if await page.locator(f'xpath={xpath_area_morta}').is_visible():
+                                # Clica bem no cantinho superior esquerdo (x:5, y:5) para não acertar nenhum botão
+                                await page.locator(f'xpath={xpath_area_morta}').click(position={"x": 5, "y": 5})
+                            
+                            await asyncio.sleep(0.5)
+
+                        except Exception as e:
+                            logger.debug(f"Aviso no Keep-Alive da aba {symbol}: {e}")
+
+                    # Depois de acordar todas as abas, volta a deixar a tela na aba do primeiro ativo da lista
+                    try:
+                        primeira_pagina = list(self.pages.values())[0]
+                        await primeira_pagina.bring_to_front()
+                    except:
+                        pass
+
+            except asyncio.CancelledError:
+                logger.info("⏹️ Sistema Anti-Inatividade encerrado com sucesso.")
+                break
+            except Exception as e:
+                logger.debug(f"Erro menor na rotina Anti-Inatividade (Retentando em breve): {e}")
+                await asyncio.sleep(60) # Pausa em caso de erro para não floodar logs
 
     async def handle_welcome_banner(self):
         """Verifica se o banner inicial apareceu, marca 'Não mostrar novamente' e o fecha."""
@@ -317,6 +385,10 @@ class HioveScraper:
     async def close(self):
         """Fecha o navegador de forma segura"""
         try:
+            # NOVO: Cancela a rotina Anti-Inatividade antes de fechar
+            if self.keep_alive_task and not self.keep_alive_task.done():
+                self.keep_alive_task.cancel()
+                
             if self.context:
                 await self.context.close()
             if self.browser:
