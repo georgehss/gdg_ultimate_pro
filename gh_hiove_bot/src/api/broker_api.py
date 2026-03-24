@@ -149,16 +149,11 @@ class HioveBrokerAPI:
 
     async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A", hora_sinal: str = ""):
         try:
-            """Espera o tempo da vela, lê o histórico e calcula o lucro líquido real"""
-            import time
-            agora = time.time()
+            """Espera o tempo calculado matematicamente, lê o histórico e calcula o lucro líquido real"""
             
-            # Sincroniza a espera exatamente com o fechamento da vela
-            segundos_passados = agora % tempo_espera
-            espera_real = tempo_espera - segundos_passados
-            
-            # Dorme exatamente até a virada da vela + 1 segundo
-            await asyncio.sleep(espera_real + 1)
+            # O tempo de espera exato (sincronizado com os 30s da corretora) já foi calculado!
+            # Basta o bot dormir exatamente essa quantidade de segundos.
+            await asyncio.sleep(tempo_espera)
             
             status, lucro_bruto = await self.scraper.check_trade_result(symbol, amount, hora_sinal)
             
