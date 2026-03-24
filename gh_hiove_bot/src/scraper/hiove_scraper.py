@@ -69,15 +69,15 @@ class HioveScraper:
 
     async def _keep_tabs_alive(self):
         """
-        Rotina de Fundo (Anti-Idle).
-        A cada 2 minutos, navega pelas abas, move o rato e acorda o navegador
-        para evitar o congelamento do relógio ou deslogue por inatividade.
+        Rotina de Fundo (Anti-Idle e Monitor de Congelamento).
+        A cada 60 segundos, verifica se a página travou lendo o relógio global.
+        Se congelar, força um recarregamento (F5) na aba do ativo afetado.
         """
-        logger.info("🛡️ Sistema Anti-Inatividade (Keep-Alive) iniciado.")
+        logger.info("🛡️ Sistema Anti-Inatividade e Monitor de Tela ativados.")
         while True:
             try:
-                # Roda a verificação a cada 2 minutos (120 segundos)
-                await asyncio.sleep(120)
+                # Verificação mais frequente: a cada 60 segundos
+                await asyncio.sleep(60)
 
                 if not self.pages:
                     continue
@@ -85,14 +85,12 @@ class HioveScraper:
                 # ========================================================
                 # SEGURANÇA MÁXIMA: Proteção do momento do disparo (Sniper)
                 # ========================================================
-                # O bot precisa do navegador livre na virada do minuto.
-                # Se estivermos entre o segundo 45 e o segundo 10, ele não mexe em nada!
                 agora = datetime.now()
                 if agora.second > 45 or agora.second < 10:
                     await asyncio.sleep(15) # Espera o período crítico passar
                     continue
 
-                logger.debug("🔄 Executando rotina Anti-Inatividade nas abas (Evitando congelamento)...")
+                logger.debug("🔄 Verificando saúde das abas (Monitor de Relógio)...")
 
                 # Pega a trava de operações para garantir que não atrapalha um trade
                 async with self.trade_lock:
@@ -100,25 +98,52 @@ class HioveScraper:
                         try:
                             # 1. Traz a aba para a frente (Força o Chrome a renderizar/descongelar)
                             await page.bring_to_front()
-                            await asyncio.sleep(0.5)
+                            await asyncio.sleep(1.0) # Dá tempo ao relógio para voltar a girar se for só lag visual
 
-                            # 2. Move o rato nativamente
+                            # 2. Movimentação do rato para resetar o idle do servidor
                             await page.mouse.move(150, 200)
                             await asyncio.sleep(0.2)
                             await page.mouse.move(500, 350)
 
-                            # 3. Dá um clique "fantasma" inofensivo num canto morto do cabeçalho
                             xpath_area_morta = '//*[@id="header"]'
                             if await page.locator(f'xpath={xpath_area_morta}').is_visible():
-                                # Clica bem no cantinho superior esquerdo (x:5, y:5) para não acertar nenhum botão
                                 await page.locator(f'xpath={xpath_area_morta}').click(position={"x": 5, "y": 5})
-                            
-                            await asyncio.sleep(0.5)
+
+                            # ==========================================
+                            # 3. VERIFICAÇÃO DE CONGELAMENTO DO RELÓGIO
+                            # ==========================================
+                            xpath_relogio = '//*[@id="root"]/div[2]/div/footer/footer/div[2]/span[2]'
+                            relogio_element = page.locator(f'xpath={xpath_relogio}')
+
+                            if await relogio_element.is_visible():
+                                # Tira a primeira "fotografia" ao relógio
+                                relogio_1 = await relogio_element.inner_text()
+                                
+                                # Pausa de exatos 2 segundos reais
+                                await asyncio.sleep(2.0)
+                                
+                                # Tira a segunda "fotografia" ao relógio
+                                relogio_2 = await relogio_element.inner_text()
+
+                                # Se o texto for idêntico, o relógio não avançou um único segundo. A página crashou!
+                                if relogio_1 == relogio_2 and ":" in relogio_1:
+                                    logger.warning(f"⚠️ [{symbol}] TELA CONGELADA! Relógio travado em '{relogio_1}'. A página perdeu conexão.")
+                                    logger.info(f"🔄 [{symbol}] Forçando recarregamento (F5) para restabelecer o ativo...")
+                                    
+                                    # Executa o Reload na aba
+                                    await page.reload(timeout=30000)
+                                    await page.wait_for_load_state('networkidle', timeout=15000)
+                                    await asyncio.sleep(3)
+                                    
+                                    logger.info(f"✅ [{symbol}] Página recarregada com sucesso e pronta para operar!")
+                                    
+                                    # (Não se preocupe com o valor apostado, pois a nossa função place_order já
+                                    # tem um código que apaga e digita o valor antes de atirar de qualquer forma!)
 
                         except Exception as e:
-                            logger.debug(f"Aviso no Keep-Alive da aba {symbol}: {e}")
+                            logger.debug(f"Aviso no Monitor de Congelamento da aba {symbol}: {e}")
 
-                    # Depois de acordar todas as abas, volta a deixar a tela na aba do primeiro ativo da lista
+                    # Depois de verificar todas, volta o foco para a primeira da lista
                     try:
                         primeira_pagina = list(self.pages.values())[0]
                         await primeira_pagina.bring_to_front()
@@ -129,8 +154,8 @@ class HioveScraper:
                 logger.info("⏹️ Sistema Anti-Inatividade encerrado com sucesso.")
                 break
             except Exception as e:
-                logger.debug(f"Erro menor na rotina Anti-Inatividade (Retentando em breve): {e}")
-                await asyncio.sleep(60) # Pausa em caso de erro para não floodar logs
+                logger.debug(f"Erro na rotina Anti-Inatividade (Retentando em breve): {e}")
+                await asyncio.sleep(30)
 
     async def handle_welcome_banner(self):
         """Verifica se o banner inicial apareceu, marca 'Não mostrar novamente' e o fecha."""
