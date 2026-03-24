@@ -1,6 +1,7 @@
 import logging
 import asyncio
 from aiohttp import web
+from datetime import datetime
 from core.config import WEBHOOK_TOKEN 
 from core.database import log_trade, update_trade_result, get_daily_profit
 
@@ -89,7 +90,17 @@ class WebhookServer:
             else:
                 emoji = "⚠️ AVISO"
 
-            msg_resultado = f"{emoji} Resultado da Operação!\nAtivo: {symbol}\nLucro/Perda: ${lucro:.2f}"
+            hora_fecho = datetime.now().strftime("%H:%M:%S")
+            tipo_entrada = "Sinal" if current_step == 0 else f"Martingale (Passo {current_step})"
+
+            msg_resultado = (
+                f"*Resultado da Operação!*\n"
+                f"{emoji}\n"
+                f"▫️ Ativo: {symbol}\n"
+                f"▫️ Tipo: {tipo_entrada}\n"
+                f"▫️ Fechado às: {hora_fecho}\n"
+                f"▫️ Lucro/Perda: ${lucro:.2f}"
+            )
             await self.telegram_bot.send_alert(msg_resultado)
             logger.info(msg_resultado.replace('\n', ' | '))
             

@@ -1,4 +1,5 @@
 import logging, asyncio, aiohttp, os, signal
+from datetime import datetime
 from core.database import log_trade, update_trade_result, get_daily_profit
 
 logger = logging.getLogger(__name__)
@@ -99,17 +100,25 @@ class HioveBrokerAPI:
             # ==========================================
             # NOVA MENSAGEM DE ENTRADA PADRONIZADA
             # ==========================================
-            emoji_circle = "🈯️" if direction.upper() == "BUY" else "🈲"
+            hora_atual = datetime.now().strftime("%H:%M:%S")
             dir_icon = "🈯️ COMPRA" if direction.upper() == "BUY" else "🈲 VENDA"
             
+            # Ajusta o texto se for Sinal normal ou Martingale
+            if current_step == 0:
+                header_msg = "🚀 *Sinal Executado!*"
+                linha_hora = f"▫️ Horário do Sinal: {hora_atual}"
+            else:
+                header_msg = f"🔄 *Martingale Executado! (Passo {current_step})*"
+                linha_hora = f"▫️ Horário do MG: {hora_atual}"
+            
             msg_entrada = (
-                f"🚀 *Sinal Executado!*\n"
-                #f"{emoji_circle}\n"
+                f"{header_msg}\n"
                 f"▫️ Ativo: {symbol}\n"
                 f"▫️ Direção: {dir_icon}\n"
                 f"▫️ Tempo: {duration}\n"
                 f"▫️ Payout: {payout_str}\n"
-                f"▫️ Valor Ordem: ${amount:.2f}"
+                f"▫️ Valor Ordem: ${amount:.2f}\n"
+                f"{linha_hora}"
             )
             asyncio.create_task(telegram_alert_cb(msg_entrada))
             # ==========================================
@@ -118,10 +127,10 @@ class HioveBrokerAPI:
             tempo_total_segundos = (minutos * 60) + segundos
             
             self.active_monitors += 1
-            # Passe o payout_str para o monitor task
+            # Importante: repassando a variável "hora_atual" para o _monitor_task
             asyncio.create_task(self._monitor_task(
                 symbol, order_id, tempo_total_segundos, telegram_alert_cb, 
-                amount, direction, duration, current_step, payout_str
+                amount, direction, duration, current_step, payout_str, hora_atual
             ))
         else:
             await log_trade(symbol, direction, amount, duration, "FALHOU", None)
@@ -129,7 +138,7 @@ class HioveBrokerAPI:
             logger.error(msg_erro.replace('*', ''))
             await telegram_alert_cb(msg_erro)
 
-    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A"):
+    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A", hora_sinal: str = ""):
         try:
             """Espera o tempo da vela, lê o histórico e calcula o lucro líquido real"""
             import time
@@ -171,8 +180,11 @@ class HioveBrokerAPI:
             elif status == "EMPATE": emoji = "⚪ EMPATE"
             else: emoji = "⚠️ AVISO"
 
-            # Formatação de ícones para a direção (opcional, mas fica bem visual)
             dir_icon = "🈯️ COMPRA" if direction.upper() == "BUY" else "🈲 VENDA"
+            
+            # Mostra qual foi o horário da entrada baseada no tipo (Normal ou MG)
+            linha_hora = f"▫️ Horário do Sinal: {hora_sinal}" if current_step == 0 else f"▫️ Horário do MG: {hora_sinal}"
+            hora_fechamento = datetime.now().strftime("%H:%M:%S")
 
             msg = (
                 f"*Resultado da Operação!*\n"
@@ -182,6 +194,8 @@ class HioveBrokerAPI:
                 f"▫️ Tempo: {duration}\n"
                 f"▫️ Payout: {payout}\n"
                 f"▫️ Valor Ordem: ${amount:.2f}\n"
+                f"{linha_hora}\n"
+                f"▫️ Horário do Fim: {hora_fechamento}\n"
                 f"▫️ Resultado: ${lucro_liquido:.2f}\n\n"
                 f"💰 *Balanço da Conta:* ${saldo_atual:.2f}\n"
                 f"📊 *Lucro Acumulado:* ${lucro_acumulado:.2f}"
