@@ -123,13 +123,22 @@ class HioveBrokerAPI:
             asyncio.create_task(telegram_alert_cb(msg_entrada))
             # ==========================================
             
-            minutos, segundos = map(int, duration.split(':'))
-            tempo_total_segundos = (minutos * 60) + segundos
+            # CÁLCULO DINÂMICO DE ESPERA (REGRA DOS 30 SEGUNDOS)
+            agora = datetime.now()
+            minutos_ativo, _ = map(int, duration.split(':'))
+            
+            if agora.second <= 30:
+                # Pertence ao minuto atual. Subtrai 1 minuto pois o minuto atual já está a correr
+                segundos_espera = (60 - agora.second) + ((minutos_ativo - 1) * 60) + 5
+            else:
+                # Empurrado para o minuto seguinte. Tempo restante deste minuto + tempo total do ativo
+                segundos_espera = (60 - agora.second) + (minutos_ativo * 60) + 5
+                
+            logger.info(f"⏳ [{symbol}] O robô dormirá por {segundos_espera}s para sincronizar com a corretora...")
             
             self.active_monitors += 1
-            # Importante: repassando a variável "hora_atual" para o _monitor_task
             asyncio.create_task(self._monitor_task(
-                symbol, order_id, tempo_total_segundos, telegram_alert_cb, 
+                symbol, order_id, segundos_espera, telegram_alert_cb, 
                 amount, direction, duration, current_step, payout_str, hora_atual
             ))
         else:

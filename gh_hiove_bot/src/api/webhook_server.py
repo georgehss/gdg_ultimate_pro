@@ -69,11 +69,16 @@ class WebhookServer:
             order_id = resultado["id"]
             await log_trade(symbol, direction, amount, duration, "ABERTA", order_id)
             
-            minutos, segundos = map(int, duration.split(':'))
-            tempo_total_segundos = (minutos * 60) + segundos
+            agora = datetime.now()
+            minutos_ativo, _ = map(int, duration.split(':'))
             
-            logger.info(f"⏳ Ordem colocada. A aguardar {tempo_total_segundos + 3}s pelo fecho da vela...")
-            await asyncio.sleep(tempo_total_segundos + 3)
+            if agora.second <= 30:
+                segundos_espera = (60 - agora.second) + ((minutos_ativo - 1) * 60) + 5
+            else:
+                segundos_espera = (60 - agora.second) + (minutos_ativo * 60) + 5
+                
+            logger.info(f"⏳ Ordem colocada. A aguardar {segundos_espera}s sincronizados com o relógio da corretora...")
+            await asyncio.sleep(segundos_espera)
             
             # 3. O robô vai na aba de Histórico ver qual foi o resultado, PASSANDO A HORA
             status, lucro = await self.scraper.check_trade_result(symbol, amount, hora_sinal_mt5)

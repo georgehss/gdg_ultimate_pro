@@ -423,70 +423,99 @@ class HioveScraper:
             return 0.0
 
     async def check_trade_result(self, symbol: str, amount: float = None, hora_sinal: str = None) -> tuple[str, float]:
-        """Abre o histórico, varre a lista comparando Símbolo, Tempo, Valor e Horário do Sinal."""
+        """Abre o histórico, varre a lista cruzando Ativo, Tempo e Valor. Inclui logs super detalhados para debug."""
         page = self.pages.get(symbol)
         if not page:
+            logger.error(f"❌ [{symbol}] ERRO: A página do ativo não foi encontrada na memória (self.pages).")
             return "FALHOU", 0.0
             
         try:
-            logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando atualização do histórico...")
+            logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando a corretora processar...")
             
-            for tentativa in range(3):
-                await asyncio.sleep(2.5) 
+            # AUMENTO DE TENTATIVAS: Tenta 6 vezes (Dá ~18 segundos para a corretora resolver o delay)
+            for tentativa in range(6):
+                logger.debug(f"🔄 [{symbol}] Iniciando tentativa de leitura {tentativa + 1}/6...")
                 
+                # ==========================================
+                # O SEGREDO DO REFRESH: Alternar as abas!
+                # ==========================================
+                xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
                 xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
-                await page.locator(f'xpath={xpath_btn_historico}').click(timeout=5000)
-                await asyncio.sleep(1.0)
                 
+                try:
+                    logger.debug(f"🖱️ [{symbol}] Clicando em 'Operações' para resetar a aba...")
+                    await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
+                    await asyncio.sleep(0.5)
+                    
+                    logger.debug(f"🖱️ [{symbol}] Clicando em 'Histórico' para forçar o recarregamento...")
+                    await page.locator(f'xpath={xpath_btn_historico}').click(timeout=3000)
+                except Exception as e:
+                    logger.warning(f"⚠️ [{symbol}] Falha ao alternar abas de refresh: {e}")
+                
+                await asyncio.sleep(2.0) # Espera a lista nova renderizar na tela
+                
+                # Coleta todos os itens da lista
                 xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
                 itens = await page.locator(f'xpath={xpath_itens}').all()
                 
-                for item in itens:
+                logger.debug(f"📋 [{symbol}] Foram encontradas {len(itens)} operações na lista do histórico.")
+                
+                if not itens:
+                    logger.debug(f"⚠️ [{symbol}] A lista de histórico está vazia nesta tentativa.")
+                
+                for index, item in enumerate(itens):
                     try:
+                        logger.debug(f"🔍 [{symbol}] Analisando linha {index + 1}...")
+                        
                         # --- A. VERIFICA O ATIVO ---
                         elemento_titulo = item.locator('h4.ant-list-item-meta-title span')
-                        if not await elemento_titulo.is_visible(): continue
-                        texto_ativo = await elemento_titulo.inner_text()
-                        
-                        if texto_ativo != symbol:
-                            continue 
+                        if not await elemento_titulo.is_visible(): 
+                            logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Título do ativo não visível.")
+                            continue
                             
-                        # --- B. VERIFICA A MEMÓRIA DA CORRETORA ---
-                        elemento_tempo = item.locator('div._meta-description_n50my_253 span').first
-                        texto_tempo = await elemento_tempo.inner_text() # Ex: "18:35 / M1"
+                        texto_ativo = await elemento_titulo.inner_text()
+                        if texto_ativo != symbol:
+                            logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Ativo diferente. Encontrado '{texto_ativo}', procurado '{symbol}'.")
+                            continue
+                            
+                        # --- B. VERIFICA A MEMÓRIA (ANTI-REPETIÇÃO) ---
+                        elemento_tempo = item.locator('.ant-list-item-meta-description span').first
+                        texto_tempo = await elemento_tempo.inner_text() 
                         
                         if self.last_trade_times.get(symbol) == texto_tempo:
+                            logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Tempo '{texto_tempo}' já está na memória (Esta é a operação passada!).")
                             continue 
 
                         # --- C. VERIFICA O TEMPO DO SINAL (REGRA DOS 30 SEGUNDOS) ---
                         if hora_sinal:
                             try:
-                                # Converte o "16:30:35" num objeto de tempo
+                                from datetime import datetime, timedelta
                                 hora_obj = datetime.strptime(hora_sinal, "%H:%M:%S")
-                                
-                                # Aplica a regra exata da corretora Hiove:
                                 if hora_obj.second <= 30:
-                                    # Se a entrada foi até :30, espera o minuto cheio atual (ex: 16:30)
                                     minuto_esperado = hora_obj.strftime("%H:%M")
                                 else:
-                                    # Se passou de :30, a corretora empurra para o minuto seguinte (ex: 16:31)
                                     minuto_esperado = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
                                 
-                                # Se o horário da linha da corretora não for EXATAMENTE o esperado, é ordem velha!
                                 if minuto_esperado not in texto_tempo:
+                                    logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Regra de tempo falhou. O texto da corretora '{texto_tempo}' não contém o minuto esperado '{minuto_esperado}'.")
                                     continue
                             except Exception as e:
-                                logger.debug(f"Erro ao calcular regra dos 30 segundos: {e}")
+                                logger.error(f"❌ [{symbol}] Erro interno ao calcular a regra dos 30 segundos: {e}")
                             
-                        # --- D. VERIFICA O VALOR ---
+                        # --- D. VERIFICA O VALOR (ANTI-MARTINGALE FALSO) ---
                         elemento_valor = item.locator('h5')
                         texto_valor = await elemento_valor.inner_text() 
                         classes_css = await elemento_valor.get_attribute('class')
                         
-                        lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
+                        try:
+                            lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
+                        except ValueError:
+                            logger.error(f"❌ [{symbol}] Erro ao converter o texto de valor '{texto_valor}' para número na linha {index + 1}.")
+                            continue
                         
                         if amount is not None and 'ant-typography-danger' in classes_css:
                             if abs(lucro_bruto) != float(amount):
+                                logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Falso LOSS de Martingale. Valor da perda (${abs(lucro_bruto)}) é diferente do investido (${amount}).")
                                 continue 
 
                         # --- DEFINIÇÃO DO RESULTADO FINAL ---
@@ -497,32 +526,41 @@ class HioveScraper:
                         elif 'ant-typography-secondary' in classes_css:
                             status = "EMPATE"
                         else:
+                            logger.warning(f"⚠️ [{symbol}] Classes CSS desconhecidas na linha {index + 1}: {classes_css}")
                             status = "DESCONHECIDO"
 
-                        logger.info(f"🔎 Histórico Confirmado -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
+                        logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
                         
+                        # Salva na memória
                         self.last_trade_times[symbol] = texto_tempo
 
-                        xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
-                        await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
+                        # Tenta fechar o Histórico voltando para a aba Operações
+                        try:
+                            await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
+                            logger.debug(f"🖱️ [{symbol}] Voltou para a aba Operações com sucesso após leitura.")
+                        except Exception as e: 
+                            logger.debug(f"⚠️ [{symbol}] Não foi possível voltar à aba Operações no fechamento: {e}")
+                            pass
+                            
                         await asyncio.sleep(0.5)
                         
                         return status, lucro_bruto
 
                     except Exception as e:
-                        logger.debug(f"Erro ao ler linha do histórico: {e}")
+                        logger.error(f"❌ [{symbol}] Falha inesperada ao tentar ler e decodificar a linha {index + 1}: {e}")
                         continue
                         
-                logger.info(f"🔄 [{symbol}] Resultado ainda não disponível. Atualizando lista...")
+                logger.info(f"🔄 [{symbol}] Nenhum resultado compatível na tentativa {tentativa + 1}. Aguardando...")
                 
-            logger.error(f"❌ [{symbol}] O resultado não apareceu no histórico após as tentativas.")
+            logger.error(f"🛑 [{symbol}] ESGOTADO! O resultado não apareceu no histórico após 6 tentativas cruzando os dados.")
             try:
                 xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
                 await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
-            except: pass
+            except: 
+                pass
             
             return "ERRO_LEITURA", 0.0
 
         except Exception as e:
-            logger.error(f"❌ Erro ao ler o histórico para {symbol}: {e}")
+            logger.error(f"💥 [{symbol}] ERRO CRÍTICO GLOBAL na função check_trade_result: {e}", exc_info=True)
             return "ERRO_LEITURA", 0.0
