@@ -1,4 +1,5 @@
 import asyncio, logging, signal, sys
+from datetime import datetime
 from core.config import HIOVE_EMAIL, HIOVE_PASSWORD
 from api.broker_api import HioveBrokerAPI
 from strategy_manager import StrategyManager
@@ -22,6 +23,8 @@ logger = logging.getLogger(__name__)
 async def run_session(tg_bot, global_stop_event):
     """Encapsula a execução de uma única sessão do robô."""
     config = tg_bot.user_config
+    # NOVO: Grava a data e hora exatas em que a sessão começou
+    config["session_start"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info(f"🟢 Iniciando nova sessão com configurações: {config}")
 
     scraper = HioveScraper(email=HIOVE_EMAIL, password=HIOVE_PASSWORD, is_demo=config["is_demo"])

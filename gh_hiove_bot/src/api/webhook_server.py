@@ -3,7 +3,7 @@ import asyncio
 from aiohttp import web
 from datetime import datetime
 from core.config import WEBHOOK_TOKEN 
-from core.database import log_trade, update_trade_result, get_daily_profit
+from core.database import log_trade, update_trade_result, get_session_profit
 
 
 logger = logging.getLogger(__name__)
@@ -40,21 +40,21 @@ class WebhookServer:
             await self.telegram_bot.send_alert(msg)
         
         # ==========================================
-        # 🛡️ BARREIRA DE GESTÃO DE RISCO
+        # 🛡️ BARREIRA DE GESTÃO DE RISCO DA SESSÃO
         # ==========================================
-        lucro_diario = await get_daily_profit()
+        lucro_sessao = await get_session_profit(self.user_config["session_start"])
         
-        if lucro_diario >= tp:
-            msg = f"🏆 *META ATINGIDA (TAKE PROFIT)!*\nLucro hoje: ${lucro_diario:.2f}\nSinal do MT5 em {symbol} ignorado."
+        if lucro_sessao >= tp:
+            msg = f"🏆 *META ATINGIDA (TAKE PROFIT)!*\nLucro na sessão: ${lucro_sessao:.2f}\nSinal do MT5 em {symbol} ignorado."
             logger.warning(msg.replace('*', '').replace('\n', ' | '))
             await self.telegram_bot.send_alert(msg)
             return None 
             
-        if lucro_diario <= sl:
-            msg = f"🛑 *STOP LOSS ATINGIDO!*\nPrejuízo hoje: ${lucro_diario:.2f}\nSinal do MT5 em {symbol} ignorado."
+        if lucro_sessao <= sl:
+            msg = f"🛑 *STOP LOSS ATINGIDO!*\nPrejuízo na sessão: ${lucro_sessao:.2f}\nSinal do MT5 em {symbol} ignorado."
             logger.warning(msg.replace('*', '').replace('\n', ' | '))
             await self.telegram_bot.send_alert(msg)
-            return None 
+            return None
         # ==========================================
 
         """Executa a ordem e agenda a verificação do resultado pelo Histórico"""

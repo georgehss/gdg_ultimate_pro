@@ -1,6 +1,6 @@
 import logging, asyncio, aiohttp, os, signal
 from datetime import datetime
-from core.database import log_trade, update_trade_result, get_daily_profit
+from core.database import log_trade, update_trade_result, get_session_profit
 
 logger = logging.getLogger(__name__)
 
@@ -68,16 +68,17 @@ class HioveBrokerAPI:
         tp = self.user_config.get("take_profit", 50.0)
         sl = self.user_config.get("stop_loss", -20.0)
         
-        lucro_diario = await get_daily_profit()
+        # LÊ O LUCRO APENAS DA SESSÃO ATUAL
+        lucro_sessao = await get_session_profit(self.user_config["session_start"])
         
         # 2. SEÇÃO DE RISCO ATUALIZADA
-        if lucro_diario >= tp or lucro_diario <= sl:
+        if lucro_sessao >= tp or lucro_sessao <= sl:
             if not self.stop_triggered:
                 self.stop_triggered = True # Levanta a bandeira de parada
-                if lucro_diario >= tp:
-                    msg = f"🏆 *META ATINGIDA (TAKE PROFIT)!*\nLucro hoje: ${lucro_diario:.2f}\nO bot foi desligado pois o seu objetivo diário foi concluído."
+                if lucro_sessao >= tp:
+                    msg = f"🏆 *META ATINGIDA (TAKE PROFIT)!*\nLucro nesta sessão: ${lucro_sessao:.2f}\nO bot foi desligado pois o seu objetivo foi concluído."
                 else:
-                    msg = f"🛑 *STOP LOSS ATINGIDO!*\nPrejuízo hoje: ${lucro_diario:.2f}\nO bot foi interrompido e desligado para proteger o seu capital."
+                    msg = f"🛑 *STOP LOSS ATINGIDO!*\nPrejuízo nesta sessão: ${lucro_sessao:.2f}\nO bot foi interrompido e desligado para proteger o seu capital."
                 
                 # Se não tem mais nenhuma ordem aberta, desliga agora. Se tem, apenas guarda a mensagem.
                 if self.active_monitors == 0:
@@ -86,7 +87,7 @@ class HioveBrokerAPI:
                     os.kill(os.getpid(), signal.SIGINT)
                 else:
                     self.limit_reached_msg = msg
-            return None 
+            return None
 
         logger.info(f"⚡ Disparando ordem de {direction} via Estratégia...")
         # Adicione a variável 'amount' na chamada para o scraper!
@@ -170,11 +171,10 @@ class HioveBrokerAPI:
             await update_trade_result(order_id, status, lucro_liquido)
             
             # ==========================================
-            # 2. BUSCAR BALANÇO E LUCRO ACUMULADO
+            # 2. BUSCAR BALANÇO E LUCRO ACUMULADO DA SESSÃO
             # ==========================================
-            # Passamos o symbol para ler o saldo da aba correta e atualizada
             saldo_atual = await self.scraper.get_balance(symbol)
-            lucro_acumulado = await get_daily_profit()
+            lucro_acumulado = await get_session_profit(self.user_config["session_start"])
             
             # ==========================================
             # 3. FORMATAR E ENVIAR MENSAGEM
@@ -252,9 +252,9 @@ class HioveBrokerAPI:
             if (lucro_acumulado >= tp or lucro_acumulado <= sl) and not self.stop_triggered:
                 self.stop_triggered = True
                 if lucro_acumulado >= tp:
-                    self.limit_reached_msg = f"🏆 *META ATINGIDA (TAKE PROFIT)!*\nLucro hoje: ${lucro_acumulado:.2f}\nO bot atingiu o alvo diário e será desligado agora."
+                    self.limit_reached_msg = f"🏆 *META ATINGIDA (TAKE PROFIT)!*\nLucro na sessão: ${lucro_acumulado:.2f}\nO bot atingiu o alvo e será desligado agora."
                 else:
-                    self.limit_reached_msg = f"🛑 *STOP LOSS ATINGIDO!*\nPrejuízo hoje: ${lucro_acumulado:.2f}\nO limite de perda foi atingido. O bot será desligado para proteger o seu capital."
+                    self.limit_reached_msg = f"🛑 *STOP LOSS ATINGIDO!*\nPrejuízo na sessão: ${lucro_acumulado:.2f}\nO limite de perda foi atingido. O bot será desligado."
                     
         finally: 
             # Avisa que esta operação terminou

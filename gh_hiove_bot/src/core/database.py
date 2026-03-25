@@ -68,20 +68,19 @@ async def update_trade_result(order_id: str, new_status: str, profit: float):
     except Exception as e:
         logger.error(f"❌ Erro ao atualizar resultado na base de dados: {e}")
 
-async def get_daily_profit() -> float:
-    """Calcula o lucro/prejuízo total do dia atual"""
-    hoje = datetime.now().strftime("%Y-%m-%d")
+async def get_session_profit(session_start_time: str) -> float:
+    """Calcula o lucro/prejuízo total apenas da sessão atual"""
     try:
         async with aiosqlite.connect(DB_NAME) as db:
-            # Soma a coluna 'profit' onde a data começa com a data de hoje e a ordem fechou
+            # Soma a coluna 'profit' onde o timestamp for maior ou igual à hora de início da sessão
             cursor = await db.execute('''
                 SELECT SUM(profit) FROM trades 
-                WHERE timestamp LIKE ? AND status IN ('WIN', 'LOSS')
-            ''', (f"{hoje}%",))
+                WHERE timestamp >= ? AND status IN ('WIN', 'LOSS')
+            ''', (session_start_time,))
             row = await cursor.fetchone()
             
-            # Se não houver operações hoje, o lucro é 0.0
+            # Se não houver operações nesta sessão, o lucro é 0.0
             return row[0] if row and row[0] is not None else 0.0
     except Exception as e:
-        logger.error(f"❌ Erro ao calcular lucro diário: {e}")
+        logger.error(f"❌ Erro ao calcular lucro da sessão: {e}")
         return 0.0
