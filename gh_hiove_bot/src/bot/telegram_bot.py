@@ -1,8 +1,7 @@
-import logging
-import asyncio
+import logging, asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-
+from core.database import save_user_config, load_user_config
 from core.config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID
 
 logger = logging.getLogger(__name__)
@@ -44,15 +43,20 @@ class TradingTelegramBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_auth(update): return
         
-        # Reseta o assistente caso o usuário digite /start novamente
-        self.setup_step = "account"
-        self.user_config["assets"] = []
-        
         if self.setup_event.is_set():
-            await update.message.reply_text("⚠️ O robô já está rodando! Para reconfigurar, reinicie o servidor no terminal.")
+            await update.message.reply_text("⚠️ O robô já está rodando! Para reconfigurar, pare a sessão atual com /stop.")
             return
-            
-        await self.send_setup_step(update.message)
+
+        # Verifica se tem configuração salva
+        saved_config = await load_user_config()
+        if saved_config:
+            self.setup_step = "start_menu" # Vai para o novo menu
+            await self.send_setup_step(update.message)
+        else:
+            # Se não tiver, começa do zero
+            self.setup_step = "account"
+            self.user_config["assets"] = []
+            await self.send_setup_step(update.message)
 
     async def stop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_auth(update): return
@@ -76,7 +80,15 @@ class TradingTelegramBot:
         text = ""
         keyboard = []
 
-        if self.setup_step == "account":
+        # NOVO MENU DE CONFIGURAÇÃO SALVA
+        if self.setup_step == "start_menu":
+            text = "💾 *Configuração Salva Encontrada*\nDeseja iniciar rapidamente com a última configuração ou criar uma nova do zero?"
+            keyboard = [
+                [InlineKeyboardButton("▶️ Iniciar com Configuração Salva", callback_data='menu_load_saved')],
+                [InlineKeyboardButton("⚙️ Criar Nova Configuração", callback_data='menu_new_config')]
+            ]
+
+        elif self.setup_step == "account":
             text = "🤖 *Tipo de Conta*\nOnde deseja operar?"
             keyboard = [
                 [InlineKeyboardButton("🟢 Conta DEMO", callback_data='acc_demo')],
@@ -217,8 +229,27 @@ class TradingTelegramBot:
             await query.edit_message_text("▶️ Parada cancelada. A sessão atual continua operando normalmente.")
             return
 
+        
+        # GERENCIAMENTO DA CONFIGURAÇÃO SALVA
         elif data == 'session_new':
-            # Reseta o assistente para iniciar nova sessão
+            saved_config = await load_user_config()
+            if saved_config:
+                self.setup_step = "start_menu"
+                await self.send_setup_step(query.message, is_edit=True)
+            else:
+                self.setup_step = "account"
+                self.user_config["assets"] = []
+                await self.send_setup_step(query.message, is_edit=True)
+            return
+
+        elif data == 'menu_load_saved':
+            saved_config = await load_user_config()
+            if saved_config:
+                self.user_config.update(saved_config) # Puxa tudo da memória
+                await self._show_final_summary(query) # Mostra o resumo e inicia
+            return
+
+        elif data == 'menu_new_config':
             self.setup_step = "account"
             self.user_config["assets"] = []
             await self.send_setup_step(query.message, is_edit=True)
@@ -319,27 +350,7 @@ class TradingTelegramBot:
         # Passo 10: Stop Loss (Finaliza!)
         elif data.startswith('sl_'):
             self.user_config["stop_loss"] = float(data.split('_')[1])
-            
-            # Ajuste a mensagem de resumo final para mostrar o Martingale
-            mg_str = f"❌ Desativado"
-            if self.user_config['martingale_type'] != "Nenhum":
-                mg_str = f"{self.user_config['martingale_type']} | {self.user_config['martingale_steps']} passos | {self.user_config['martingale_multiplier']}x"
-
-            resumo = (
-                f"🚀 *SISTEMA INICIANDO!*\n\n"
-                f"▫️ Conta: {'DEMO 🟢' if self.user_config['is_demo'] else 'REAL 🔴'}\n"
-                f"▫️ Modo: {self.user_config['mode'].upper().replace('_', ' ')}\n"
-                f"▫️ Perfil: {self.user_config['profile']}\n"
-                f"▫️ Ativos: {', '.join(self.user_config['assets'])}\n"
-                f"▫️ Tempo: {self.user_config['duration']}\n"
-                f"▫️ Valor Ordem: ${self.user_config['amount']}\n"
-                f"🔄 Martingale: {mg_str}\n"
-                f"🎯 Take Profit: ${self.user_config['take_profit']}\n"
-                f"🛑 Stop Loss: ${self.user_config['stop_loss']}\n\n"
-                f"⏳ *Abrindo navegador...*"
-            )
-            await query.edit_message_text(text=resumo, parse_mode='Markdown')
-            self.setup_event.set()
+            await self._show_final_summary(query)
             return
 
         # Atualiza o painel para o próximo passo (se não for o fim)
@@ -386,3 +397,29 @@ class TradingTelegramBot:
             await self.app.updater.stop()
             await self.app.stop()
             await self.app.shutdown()
+
+    async def _show_final_summary(self, query):
+        """Mostra o resumo e dispara a inicialização do robô"""
+        mg_str = f"❌ Desativado"
+        if self.user_config['martingale_type'] != "Nenhum":
+            mg_str = f"{self.user_config['martingale_type']} | {self.user_config['martingale_steps']} passos | {self.user_config['martingale_multiplier']}x"
+
+        resumo = (
+            f"🚀 *SISTEMA INICIANDO!*\n\n"
+            f"▫️ Conta: {'DEMO 🟢' if self.user_config['is_demo'] else 'REAL 🔴'}\n"
+            f"▫️ Modo: {self.user_config['mode'].upper().replace('_', ' ')}\n"
+            f"▫️ Perfil: {self.user_config.get('profile', 'Balanceado')}\n"
+            f"▫️ Ativos: {', '.join(self.user_config['assets'])}\n"
+            f"▫️ Tempo: {self.user_config['duration']}\n"
+            f"▫️ Valor Ordem: ${self.user_config['amount']}\n"
+            f"🔄 Martingale: {mg_str}\n"
+            f"🎯 Take Profit: ${self.user_config['take_profit']}\n"
+            f"🛑 Stop Loss: ${self.user_config['stop_loss']}\n\n"
+            f"⏳ *Abrindo navegador...*"
+        )
+        await query.edit_message_text(text=resumo, parse_mode='Markdown')
+        
+        # SALVA A CONFIGURAÇÃO NO BANCO DE DADOS AQUI!
+        await save_user_config(self.user_config)
+        
+        self.setup_event.set()

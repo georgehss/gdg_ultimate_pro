@@ -1,5 +1,4 @@
-import aiosqlite
-import logging
+import aiosqlite, logging, json
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +31,14 @@ async def init_db():
                 status TEXT,
                 order_id TEXT,
                 profit REAL
+            )
+        ''')
+
+        # NOVO: Tabela para salvar as configurações do usuário
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS user_settings (
+                id INTEGER PRIMARY KEY,
+                config_data TEXT
             )
         ''')
         await db.commit()
@@ -84,3 +91,33 @@ async def get_session_profit(session_start_time: str) -> float:
     except Exception as e:
         logger.error(f"❌ Erro ao calcular lucro da sessão: {e}")
         return 0.0
+    
+async def save_user_config(config: dict):
+    """Salva as opções do usuário no banco de dados em formato JSON"""
+    try:
+        # Removemos dados que são exclusivos da sessão atual (para não bugar a próxima sessão)
+        config_to_save = config.copy()
+        config_to_save.pop('session_start', None)
+        config_to_save.pop('saldo_inicial', None)
+        
+        config_json = json.dumps(config_to_save)
+        async with aiosqlite.connect(DB_NAME) as db:
+            await db.execute('''
+                INSERT OR REPLACE INTO user_settings (id, config_data)
+                VALUES (1, ?)
+            ''', (config_json,))
+            await db.commit()
+    except Exception as e:
+        logger.error(f"❌ Erro ao salvar configuração: {e}")
+
+async def load_user_config() -> dict:
+    """Carrega as opções salvas do usuário do banco de dados"""
+    try:
+        async with aiosqlite.connect(DB_NAME) as db:
+            cursor = await db.execute('SELECT config_data FROM user_settings WHERE id = 1')
+            row = await cursor.fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar configuração: {e}")
+    return None
