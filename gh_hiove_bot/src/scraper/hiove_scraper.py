@@ -286,7 +286,7 @@ class HioveScraper:
             if amount.is_integer():
                 str_amount = str(int(amount))
             else:
-                str_amount = str(round(amount, 2))
+                str_amount = str(round(amount, 2)).replace('.', ',') # Troca ponto por vírgula
                 
             await locator_valor.type(str_amount, delay=100)
             await page.keyboard.press("Enter")
@@ -328,7 +328,7 @@ class HioveScraper:
                     if amount.is_integer():
                         str_amount = str(int(amount))
                     else:
-                        str_amount = str(round(amount, 2))
+                        str_amount = str(round(amount, 2)).replace('.', ',') # Troca ponto por vírgula
                         
                     await locator_valor.type(str_amount, delay=100) 
                     await page.keyboard.press("Enter")
@@ -553,9 +553,10 @@ class HioveScraper:
                             continue
                         
                         if amount is not None and 'ant-typography-danger' in classes_css:
-                            if abs(lucro_bruto) != float(amount):
-                                logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Falso LOSS de Martingale. Valor da perda (${abs(lucro_bruto)}) é diferente do investido (${amount}).")
-                                continue 
+                            # Flexibiliza a tolerância para caso a corretora engula os centavos
+                            if abs(lucro_bruto) < float(amount) * 0.8:
+                                logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Falso LOSS de Martingale.")
+                                continue
 
                         # --- DEFINIÇÃO DO RESULTADO FINAL ---
                         if 'ant-typography-success' in classes_css:
