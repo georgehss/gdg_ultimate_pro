@@ -184,8 +184,10 @@ class TradingTelegramBot:
             text = "💵 *Valor de Entrada*\nQuanto investir por operação?"
             keyboard = [
                 [InlineKeyboardButton("$ 1", callback_data='amt_1'),
-                 InlineKeyboardButton("$ 5", callback_data='amt_5')],
-                [InlineKeyboardButton("$ 10", callback_data='amt_10'),
+                 InlineKeyboardButton("$ 2", callback_data='amt_2'),
+                 InlineKeyboardButton("$ 3", callback_data='amt_3')],
+                [InlineKeyboardButton("$ 5", callback_data='amt_5'),
+                 InlineKeyboardButton("$ 10", callback_data='amt_10'),
                  InlineKeyboardButton("$ 20", callback_data='amt_20')]
             ]
 
@@ -201,14 +203,21 @@ class TradingTelegramBot:
             text = "🔢 *Passos do Martingale*\nQuantas vezes o bot deve tentar recuperar?"
             keyboard = [
                 [InlineKeyboardButton("1 Passo", callback_data='mgstep_1'),
-                 InlineKeyboardButton("2 Passos", callback_data='mgstep_2')],
-                [InlineKeyboardButton("3 Passos", callback_data='mgstep_3')]
+                 InlineKeyboardButton("2 Passos", callback_data='mgstep_2'),
+                 InlineKeyboardButton("3 Passos", callback_data='mgstep_3')],
+                [InlineKeyboardButton("4 Passos", callback_data='mgstep_4'),
+                 InlineKeyboardButton("5 Passos", callback_data='mgstep_5'),
+                 InlineKeyboardButton("6 Passos", callback_data='mgstep_6')]
             ]
 
         elif self.setup_step == "martingale_multiplier":
             text = "✖️ *Multiplicador*\nQual o fator de multiplicação de banca do MG?"
             keyboard = [
-                [InlineKeyboardButton("2.0 x", callback_data='mgmult_2.0'),
+                [InlineKeyboardButton("1.0 x", callback_data='mgmult_1.0'),
+                 InlineKeyboardButton("1.2 x", callback_data='mgmult_1.2'),
+                 InlineKeyboardButton("1.5 x", callback_data='mgmult_1.5')],
+                [InlineKeyboardButton("1.8 x", callback_data='mgmult_1.8'),
+                 InlineKeyboardButton("2.0 x", callback_data='mgmult_2.0'),
                  InlineKeyboardButton("2.2 x", callback_data='mgmult_2.2')],
                 [InlineKeyboardButton("2.5 x", callback_data='mgmult_2.5'),
                  InlineKeyboardButton("3.0 x", callback_data='mgmult_3.0')]
@@ -217,6 +226,9 @@ class TradingTelegramBot:
         elif self.setup_step == "take_profit":
             text = "🎯 *Meta de Lucro (Take Profit)*\nAo atingir que lucro o bot deve parar hoje?"
             keyboard = [
+                [InlineKeyboardButton("$ 2", callback_data='tp_2.0'),
+                 InlineKeyboardButton("$ 3", callback_data='tp_3.0'),
+                 InlineKeyboardButton("$ 5", callback_data='tp_5.0')],
                 [InlineKeyboardButton("$ 10", callback_data='tp_10.0'),
                  InlineKeyboardButton("$ 20", callback_data='tp_20.0')],
                 [InlineKeyboardButton("$ 50", callback_data='tp_50.0'),
@@ -226,6 +238,9 @@ class TradingTelegramBot:
         elif self.setup_step == "stop_loss":
             text = "🛑 *Limite de Perda (Stop Loss)*\nAo atingir que prejuízo o bot deve parar hoje para proteger a banca?"
             keyboard = [
+                [InlineKeyboardButton("-$ 2", callback_data='sl_-2.0'),
+                 InlineKeyboardButton("-$ 3", callback_data='sl_-3.0'),
+                 InlineKeyboardButton("-$ 5", callback_data='sl_-5.0')],
                 [InlineKeyboardButton("-$ 10", callback_data='sl_-10.0'),
                  InlineKeyboardButton("-$ 20", callback_data='sl_-20.0')],
                 [InlineKeyboardButton("-$ 50", callback_data='sl_-50.0'),
@@ -249,12 +264,42 @@ class TradingTelegramBot:
         # ==========================================
         if data == 'stop_yes':
             self.stop_session_event.set() # Avisa o main.py para destruir a sessão
+            
+            # Muda a mensagem rapidamente para dar feedback de carregamento (pois ler o saldo leva 1-2s)
+            await query.edit_message_text("⏳ *Encerrando sessão e calculando resultados...*", parse_mode='Markdown')
+            
+            # ==========================================
+            # LER RESULTADOS FINAIS DA SESSÃO
+            # ==========================================
+            saldo_atual = 0.0
+            if self.broker and self.broker.scraper:
+                ativo_base = self.user_config["assets"][0] if self.user_config.get("assets") else None
+                saldo_atual = await self.broker.scraper.get_balance(ativo_base)
+            
+            lucro_sessao = 0.0
+            session_start = self.user_config.get("session_start")
+            if session_start:
+                lucro_sessao = await get_session_profit(session_start)
+
+            # ==========================================
+            # MONTAR A MENSAGEM FINAL
+            # ==========================================
+            msg_resumo = (
+                f"✅ *Sessão Encerrada com Sucesso!*\n"
+                f"Todas as abas e operações foram finalizadas.\n\n"
+                f"📊 *Resultado Final da Sessão:*\n"
+                f"💰 *Balanço da Conta:* ${saldo_atual:.2f}\n"
+                f"📈 *Lucro Acumulado:* ${lucro_sessao:.2f}\n\n"
+                f"O que deseja fazer agora?"
+            )
+
             keyboard = [
                 [InlineKeyboardButton("🔄 Nova Sessão", callback_data='session_new')],
                 [InlineKeyboardButton("💤 Deixar em Espera", callback_data='session_standby')]
             ]
+            
             await query.edit_message_text(
-                "✅ *Sessão Encerrada com Sucesso!*\nTodas as abas de ativos foram fechadas. O que deseja fazer agora?", 
+                text=msg_resumo, 
                 parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
             )
             return
