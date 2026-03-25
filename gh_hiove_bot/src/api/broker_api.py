@@ -13,7 +13,8 @@ class HioveBrokerAPI:
         self.active_monitors = 0        # Conta quantas ordens estão abertas
         self.stop_triggered = False     # Sinaliza se bateu a meta/loss
         self.limit_reached_msg = None   # Guarda a mensagem de Stop Loss/Take Profit
-        self.martingale_state = {} # Guarda em que passo do MG cada ativo está
+        self.martingale_state = {}      # Guarda em que passo do MG cada ativo está
+        self.limit_reached_cb = None    # Função a ser chamada quando o limite for alcançado
 
     async def init_session(self):
         self.session = aiohttp.ClientSession()
@@ -80,11 +81,14 @@ class HioveBrokerAPI:
                 else:
                     msg = f"🛑 *STOP LOSS ATINGIDO!*\nPrejuízo nesta sessão: ${lucro_sessao:.2f}\nO bot foi interrompido e desligado para proteger o seu capital."
                 
-                # Se não tem mais nenhuma ordem aberta, desliga agora. Se tem, apenas guarda a mensagem.
+                # Se não tem mais nenhuma ordem aberta, encerra suavemente agora. Se tem, apenas guarda a mensagem.
                 if self.active_monitors == 0:
                     logger.warning(msg.replace('*', '').replace('\n', ' | '))
-                    await telegram_alert_cb(msg)
-                    os.kill(os.getpid(), signal.SIGINT)
+                    saldo_atual = await self.scraper.get_balance(symbol)
+                    if self.limit_reached_cb:
+                        await self.limit_reached_cb(msg, saldo_atual, lucro_sessao)
+                    else:
+                        await telegram_alert_cb(msg)
                 else:
                     self.limit_reached_msg = msg
             return None
@@ -260,8 +264,14 @@ class HioveBrokerAPI:
             # Avisa que esta operação terminou
             self.active_monitors -= 1
             
-            # Se esta era a última operação rodando E o bot bateu a meta/loss, envia a mensagem UMA vez e desliga
+            # Se esta era a última operação rodando E o bot bateu a meta/loss, envia a mensagem e menu de parada suave
             if self.active_monitors == 0 and self.stop_triggered and self.limit_reached_msg:
                 logger.warning(self.limit_reached_msg.replace('*', '').replace('\n', ' | '))
-                await telegram_alert_cb(self.limit_reached_msg)
-                os.kill(os.getpid(), signal.SIGINT)
+                
+                saldo_atual = await self.scraper.get_balance(symbol)
+                lucro_acumulado = await get_session_profit(self.user_config["session_start"])
+                
+                if self.limit_reached_cb:
+                    await self.limit_reached_cb(self.limit_reached_msg, saldo_atual, lucro_acumulado)
+                else:
+                    await telegram_alert_cb(self.limit_reached_msg)

@@ -512,6 +512,35 @@ class TradingTelegramBot:
         except Exception as e:
             logger.error(f"Erro ao enviar alerta via Telegram: {e}")
 
+    async def send_limit_reached_menu(self, limit_msg: str, saldo_atual: float, lucro_sessao: float):
+        """Envia o menu com botões quando a meta ou o stop loss é batido e para a sessão."""
+        self.stop_session_event.set() # Avisa o main.py para destruir a sessão de forma segura (fechar navegador, etc.)
+        
+        msg_resumo = (
+            f"{limit_msg}\n\n"
+            f"✅ *Todas as abas e operações foram finalizadas.*\n\n"
+            f"📊 *Resultado Final da Sessão:*\n"
+            f"💰 *Balanço da Conta:* ${saldo_atual:.2f}\n"
+            f"📈 *Lucro Acumulado:* ${lucro_sessao:.2f}\n\n"
+            f"O que deseja fazer agora?"
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 Nova Sessão", callback_data='session_new')],
+            [InlineKeyboardButton("💤 Deixar em Espera", callback_data='session_standby')]
+        ]
+        
+        if not self.app or not self.admin_id: return
+        try:
+            await self.app.bot.send_message(
+                chat_id=self.admin_id, 
+                text=msg_resumo, 
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as e:
+            logger.error(f"Erro ao enviar menu de limite alcançado: {e}")                    
+
     async def start_polling(self):
         if not self.token or not self.admin_id: return
         self.app = ApplicationBuilder().token(self.token).build()
