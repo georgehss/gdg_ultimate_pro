@@ -16,6 +16,7 @@ class TradingTelegramBot:
         self.app = None
         
         self.setup_event = asyncio.Event()
+        self.stop_session_event = asyncio.Event() # Evento para gerir a paragem da sessão
         
         # Guardará TODAS as escolhas do usuário
         self.user_config = {
@@ -52,6 +53,23 @@ class TradingTelegramBot:
             return
             
         await self.send_setup_step(update.message)
+
+    async def stop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self.check_auth(update): return
+        
+        if not self.setup_event.is_set():
+            await update.message.reply_text("⚠️ Não há nenhuma sessão ativa para parar. Use /start para iniciar.")
+            return
+
+        keyboard = [
+            [InlineKeyboardButton("✅ Sim, parar sessão", callback_data='stop_yes')],
+            [InlineKeyboardButton("❌ Não, continuar", callback_data='stop_no')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "🛑 *Atenção!*\nVocê quer realmente encerrar a sessão atual do robô e parar as operações?", 
+            parse_mode='Markdown', reply_markup=reply_markup
+        )
 
     async def send_setup_step(self, message_obj, is_edit=False):
         """Envia ou edita a mensagem dependendo do passo atual"""
@@ -178,12 +196,44 @@ class TradingTelegramBot:
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
+        data = query.data
 
-        if self.setup_event.is_set():
-            await query.edit_message_text(text="⚠️ O robô já foi inicializado.")
+        # ==========================================
+        # NOVOS COMANDOS DE PARADA E PÓS-PARADA
+        # ==========================================
+        if data == 'stop_yes':
+            self.stop_session_event.set() # Avisa o main.py para destruir a sessão
+            keyboard = [
+                [InlineKeyboardButton("🔄 Nova Sessão", callback_data='session_new')],
+                [InlineKeyboardButton("💤 Deixar em Espera", callback_data='session_standby')]
+            ]
+            await query.edit_message_text(
+                "✅ *Sessão Encerrada com Sucesso!*\nTodas as abas de ativos foram fechadas. O que deseja fazer agora?", 
+                parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard)
+            )
             return
 
-        data = query.data
+        elif data == 'stop_no':
+            await query.edit_message_text("▶️ Parada cancelada. A sessão atual continua operando normalmente.")
+            return
+
+        elif data == 'session_new':
+            # Reseta o assistente para iniciar nova sessão
+            self.setup_step = "account"
+            self.user_config["assets"] = []
+            await self.send_setup_step(query.message, is_edit=True)
+            return
+
+        elif data == 'session_standby':
+            await query.edit_message_text("💤 *Robô em modo de espera.*\n\nO sistema continua online no terminal. Quando quiser operar novamente, basta digitar /start.", parse_mode='Markdown')
+            return
+
+        # ==========================================
+        # BLOQUEIO DE SEGURANÇA ORIGINAL
+        # Garante que os botões de setup não sejam clicados durante uma sessão ativa
+        if self.setup_event.is_set():
+            await query.edit_message_text(text="⚠️ O robô já foi inicializado e está operando.")
+            return
 
         # Passo 1: Conta
         if data.startswith('acc_'):
@@ -323,6 +373,7 @@ class TradingTelegramBot:
         if not self.token or not self.admin_id: return
         self.app = ApplicationBuilder().token(self.token).build()
         self.app.add_handler(CommandHandler("start", self.start_command))
+        self.app.add_handler(CommandHandler("stop", self.stop_command))
         self.app.add_handler(CommandHandler("status", self.status_command))
         self.app.add_handler(CallbackQueryHandler(self.button_handler)) 
         logger.info("Bot do Telegram inicializado. Aguardando /start...")

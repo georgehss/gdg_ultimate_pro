@@ -18,6 +18,7 @@ class HioveScraper:
         self.last_trade_times = {} # Memória para não ler o mesmo horário de operação duas vezes
         self.keep_alive_task = None # Guarda a tarefa anti-inatividade
 
+
     async def start(self):
         """Inicia o navegador e faz login na Hiove"""
         logger.info("Iniciando o navegador do robô...")
@@ -406,6 +407,19 @@ class HioveScraper:
             except Exception as e:
                 logger.error(f"❌ [{symbol}] Erro inesperado ao clicar: {e}")
                 return None
+            
+    async def close_asset_tabs(self):
+        """Fecha todas as abas de ativos, atendendo ao requisito de encerrar operações visuais"""
+        logger.info("Fechando todas as abas exclusivas dos ativos...")
+        for symbol, page in self.pages.items():
+            try:
+                await page.close()
+                logger.info(f"Aba do ativo {symbol} fechada com sucesso.")
+            except Exception as e:
+                logger.warning(f"Aviso ao tentar fechar a aba de {symbol}: {e}")
+        
+        self.pages.clear()
+        self.last_trade_times.clear()
 
     async def close(self):
         """Fecha o navegador de forma segura"""
