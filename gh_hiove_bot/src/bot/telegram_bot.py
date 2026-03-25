@@ -82,7 +82,41 @@ class TradingTelegramBot:
 
         # NOVO MENU DE CONFIGURAÇÃO SALVA
         if self.setup_step == "start_menu":
-            text = "💾 *Configuração Salva Encontrada*\nDeseja iniciar rapidamente com a última configuração ou criar uma nova do zero?"
+            # Carrega a configuração salva do banco de dados para mostrar ao usuário
+            saved_config = await load_user_config()
+            
+            if saved_config:
+                # Formata os dados de forma segura (usando .get para evitar erros)
+                tipo_conta = "DEMO 🟢" if saved_config.get('is_demo') else "REAL 🔴"
+                modo = saved_config.get('mode', 'Desconhecido').upper().replace('_', ' ')
+                perfil = saved_config.get('profile', 'Balanceado')
+                ativos = ", ".join(saved_config.get('assets', []))
+                tempo = saved_config.get('duration', '01:00')
+                valor = float(saved_config.get('amount', 1.0))
+                tp = float(saved_config.get('take_profit', 0.0))
+                sl = float(saved_config.get('stop_loss', 0.0))
+                
+                mg_str = "❌ Desativado"
+                if saved_config.get('martingale_type') and saved_config['martingale_type'] != "Nenhum":
+                    mg_str = f"{saved_config['martingale_type']} | {saved_config.get('martingale_steps', 0)} passos | {saved_config.get('martingale_multiplier', 0)}x"
+
+                text = (
+                    f"💾 *Configuração Salva Encontrada*\n\n"
+                    f"📋 *Resumo das definições:*\n"
+                    f"▫️ Conta: {tipo_conta}\n"
+                    f"▫️ Modo: {modo}\n"
+                    f"▫️ Perfil: {perfil}\n"
+                    f"▫️ Ativos: {ativos}\n"
+                    f"▫️ Tempo: {tempo}\n"
+                    f"▫️ Valor Ordem: ${valor:.2f}\n"
+                    f"🔄 Martingale: {mg_str}\n"
+                    f"🎯 Take Profit: ${tp:.2f}\n"
+                    f"🛑 Stop Loss: ${sl:.2f}\n\n"
+                    f"Deseja iniciar o robô com esta configuração ou criar uma nova do zero?"
+                )
+            else:
+                text = "💾 *Configuração Salva Encontrada*\nDeseja iniciar rapidamente com a última configuração ou criar uma nova do zero?"
+
             keyboard = [
                 [InlineKeyboardButton("▶️ Iniciar com Configuração Salva", callback_data='menu_load_saved')],
                 [InlineKeyboardButton("⚙️ Criar Nova Configuração", callback_data='menu_new_config')]

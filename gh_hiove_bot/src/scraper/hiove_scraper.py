@@ -14,6 +14,7 @@ class HioveScraper:
         self.main_page = None # Usado para login e será reaproveitado
         self.playwright = None
         self.pages = {} # Dicionário para guardar a aba exclusiva de cada ativo
+        self.asset_configs = {} # Guarda a configuração de tempo/valor de cada ativo
         self.trade_lock = asyncio.Lock() # Trava para criar uma fila de espera de cliques simultâneos
         self.last_trade_times = {} # Memória para não ler o mesmo horário de operação duas vezes
         self.keep_alive_task = None # Guarda a tarefa anti-inatividade
@@ -68,151 +69,199 @@ class HioveScraper:
         except Exception as e:
             logger.error(f"❌ Erro crítico ao tentar fazer login via Scraper: {e}")
 
+    async def _relogin_and_reconfigure(self, symbol: str, page):
+        """Refaz o login e reconfigura do zero um ativo numa aba que foi deslogada."""
+        try:
+            logger.info(f"🔄 [{symbol}] Refazendo login na aba afetada...")
+            await page.goto("https://app.hiove.com/auth/login")
+            await page.wait_for_load_state('networkidle')
+            
+            # Verifica se o campo de email realmente apareceu (pois outra aba pode já ter feito o login por nós)
+            try:
+                if await page.locator('#email').is_visible(timeout=5000):
+                    await page.locator('#email').fill(self.email)
+                    await page.locator('#password').fill(self.password)
+                    await page.locator('button[type="submit"]:has-text("Entrar")').click()
+                    await page.wait_for_load_state('networkidle')
+                    await asyncio.sleep(3)
+                    await self.handle_welcome_banner(target_page=page)
+                    await self.select_account_type(self.is_demo, target_page=page)
+            except Exception:
+                pass # Já estava logado, apenas segue para buscar o ativo
+
+            config = self.asset_configs.get(symbol)
+            if not config:
+                logger.error(f"❌ [{symbol}] Sem configuração em memória para recuperar o ativo.")
+                return
+
+            logger.info(f"🔄 [{symbol}] Buscando e reconfigurando o ativo...")
+            await page.locator('//*[@id="header"]/div/div[1]/div[1]/button/i').click(timeout=10000)
+            await asyncio.sleep(1) 
+            await page.locator(f'button:has-text("{config["asset_type"]}")').click(timeout=10000)
+            await asyncio.sleep(0.5)
+            await page.locator('input[placeholder="Pesquisar aqui"]').fill(symbol)
+            await asyncio.sleep(1.5) 
+            await page.locator(f'text="{symbol}"').first.click(timeout=10000)
+            
+            try: await page.wait_for_load_state('networkidle', timeout=10000)
+            except: pass
+            await asyncio.sleep(2)
+            
+            # --- Configurar o TEMPO ---
+            xpath_tempo = '//*[@id="sider-trade"]/div/div/form/div[2]/div[1]/div/div/div/div/div/div/input'
+            locator_tempo = page.locator(f'xpath={xpath_tempo}')
+            await locator_tempo.wait_for(state="visible", timeout=5000)
+            await locator_tempo.click()
+            await asyncio.sleep(1)
+            opcao_tempo = page.locator(f'.ant-popover-inner-content .ant-menu-item .ant-menu-title-content:has-text("{config["close_time"]}")')
+            try:
+                await opcao_tempo.wait_for(state="visible", timeout=3000)
+                await opcao_tempo.click()
+            except: pass
+            await asyncio.sleep(0.5)
+            
+            # --- Configurar o VALOR ---
+            xpath_valor = '//*[@id="sider-trade"]/div/div/form/div[2]/div[2]/div/div/div/div/div/div/input'
+            locator_valor = page.locator(f'xpath={xpath_valor}')
+            await locator_valor.wait_for(state="visible", timeout=5000)
+            await locator_valor.click()
+            await page.keyboard.press("Control+A") 
+            await page.keyboard.press("Backspace")
+            await asyncio.sleep(0.1)
+            
+            amount = config["amount"]
+            str_amount = str(int(amount)) if amount.is_integer() else str(round(amount, 2)).replace('.', ',')
+            await locator_valor.type(str_amount, delay=100)
+            await page.keyboard.press("Enter")
+            await asyncio.sleep(0.5)
+            
+            logger.info(f"✅ [{symbol}] Recuperação concluída. Aba pronta para operar!")
+        except Exception as e:
+            logger.error(f"❌ [{symbol}] Erro crítico durante a tentativa de recuperação de sessão: {e}")
+
     async def _keep_tabs_alive(self):
-        """
-        Rotina de Fundo (Anti-Idle e Monitor de Congelamento).
-        A cada 60 segundos, verifica se a página travou lendo o relógio global.
-        Se congelar, força um recarregamento (F5) na aba do ativo afetado.
-        """
-        logger.info("🛡️ Sistema Anti-Inatividade e Monitor de Tela ativados.")
+        """Rotina de Fundo (Monitor de Congelamento e Sessão)."""
+        logger.info("🛡️ Monitor de Tela ativado (Verificação de Relógio e Sessão).")
         while True:
             try:
-                # Verificação mais frequente: a cada 60 segundos
                 await asyncio.sleep(60)
+                if not self.pages: continue
 
-                if not self.pages:
-                    continue
-
-                # ========================================================
-                # SEGURANÇA MÁXIMA: Proteção do momento do disparo (Sniper)
-                # ========================================================
                 agora = datetime.now()
                 if agora.second > 45 or agora.second < 10:
-                    await asyncio.sleep(15) # Espera o período crítico passar
+                    await asyncio.sleep(15)
                     continue
 
-                logger.debug("🔄 Verificando saúde das abas (Monitor de Relógio)...")
+                logger.debug("🔄 Verificando saúde das abas (Monitor de Relógio e Sessão)...")
 
-                # Pega a trava de operações para garantir que não atrapalha um trade
                 async with self.trade_lock:
                     for symbol, page in self.pages.items():
                         try:
-                            # 1. Traz a aba para a frente (Força o Chrome a renderizar/descongelar)
                             await page.bring_to_front()
-                            await asyncio.sleep(1.0) # Dá tempo ao relógio para voltar a girar se for só lag visual
-
-                            # 2. Movimentação do rato para resetar o idle do servidor
-                            await page.mouse.move(150, 200)
-                            await asyncio.sleep(0.2)
-                            await page.mouse.move(500, 350)
-
-                            xpath_area_morta = '//*[@id="header"]'
-                            if await page.locator(f'xpath={xpath_area_morta}').is_visible():
-                                await page.locator(f'xpath={xpath_area_morta}').click(position={"x": 5, "y": 5})
+                            await asyncio.sleep(1.0) 
 
                             # ==========================================
-                            # 3. VERIFICAÇÃO DE CONGELAMENTO DO RELÓGIO
+                            # 1. VERIFICAÇÃO DE SESSÃO (DESLOGADO)
+                            # ==========================================
+                            is_logged_out = False
+                            if "auth/login" in page.url:
+                                is_logged_out = True
+                            else:
+                                try:
+                                    if await page.locator('#email').is_visible(timeout=500):
+                                        is_logged_out = True
+                                except: pass
+
+                            if is_logged_out:
+                                logger.warning(f"⚠️ [{symbol}] ABA DESLOGADA DETECTADA! Iniciando recuperação da sessão...")
+                                await self._relogin_and_reconfigure(symbol, page)
+                                continue # Pula a verificação do relógio pois a aba já foi recarregada
+                            
+                            # ==========================================
+                            # 2. VERIFICAÇÃO DE CONGELAMENTO DO RELÓGIO
                             # ==========================================
                             xpath_relogio = '//*[@id="root"]/div[2]/div/footer/footer/div[2]/span[2]'
                             relogio_element = page.locator(f'xpath={xpath_relogio}')
 
                             if await relogio_element.is_visible():
-                                # Tira a primeira "fotografia" ao relógio
                                 relogio_1 = await relogio_element.inner_text()
-                                
-                                # Pausa de exatos 2 segundos reais
                                 await asyncio.sleep(2.0)
-                                
-                                # Tira a segunda "fotografia" ao relógio
                                 relogio_2 = await relogio_element.inner_text()
 
-                                # Se o texto for idêntico, o relógio não avançou um único segundo. A página crashou!
                                 if relogio_1 == relogio_2 and ":" in relogio_1:
                                     logger.warning(f"⚠️ [{symbol}] TELA CONGELADA! Relógio travado em '{relogio_1}'. A página perdeu conexão.")
                                     logger.info(f"🔄 [{symbol}] Forçando recarregamento (F5) para restabelecer o ativo...")
                                     
-                                    # Executa o Reload na aba
                                     await page.reload(timeout=30000)
                                     await page.wait_for_load_state('networkidle', timeout=15000)
                                     await asyncio.sleep(3)
-                                    
                                     logger.info(f"✅ [{symbol}] Página recarregada com sucesso e pronta para operar!")
-                                    
-                                    # (Não se preocupe com o valor apostado, pois a nossa função place_order já
-                                    # tem um código que apaga e digita o valor antes de atirar de qualquer forma!)
 
                         except Exception as e:
                             logger.debug(f"Aviso no Monitor de Congelamento da aba {symbol}: {e}")
 
-                    # Depois de verificar todas, volta o foco para a primeira da lista
                     try:
                         primeira_pagina = list(self.pages.values())[0]
                         await primeira_pagina.bring_to_front()
-                    except:
-                        pass
+                    except: pass
 
             except asyncio.CancelledError:
-                logger.info("⏹️ Sistema Anti-Inatividade encerrado com sucesso.")
+                logger.info("⏹️ Monitor de Tela encerrado com sucesso.")
                 break
             except Exception as e:
-                logger.debug(f"Erro na rotina Anti-Inatividade (Retentando em breve): {e}")
+                logger.debug(f"Erro na rotina Monitor de Tela (Retentando em breve): {e}")
                 await asyncio.sleep(30)
 
-    async def handle_welcome_banner(self):
+    async def handle_welcome_banner(self, target_page=None):
         """Verifica se o banner inicial apareceu, marca 'Não mostrar novamente' e o fecha."""
+        page = target_page if target_page else self.main_page
         logger.info("Verificando presença de banner inicial...")
         try:
-            # Localizador da label que contém o texto "Não mostrar novamente"
-            checkbox_label = self.main_page.locator('label.ant-checkbox-wrapper:has-text("Não mostrar novamente")')
-            
-            # Aguarda até 5 segundos para ver se o banner aparece na tela
+            checkbox_label = page.locator('label.ant-checkbox-wrapper:has-text("Não mostrar novamente")')
             await checkbox_label.wait_for(state="visible", timeout=5000)
-            
             logger.info("Banner detectado! Marcando a caixa 'Não mostrar novamente'...")
             await checkbox_label.click()
-            await asyncio.sleep(0.5) # Pausa rápida para a interface registrar o clique
+            await asyncio.sleep(0.5) 
             
-            # Localizador do botão de fechar (procura pela div com classe _icon-close_ ou o ícone)
-            btn_close = self.main_page.locator('div[class*="_icon-close_"]').first
-            
+            btn_close = page.locator('div[class*="_icon-close_"]').first
             logger.info("Fechando o banner...")
             await btn_close.click()
-            await asyncio.sleep(1) # Aguarda a animação do banner sumir
+            await asyncio.sleep(1) 
             logger.info("✅ Banner fechado com sucesso.")
-            
         except PlaywrightTimeoutError:
-            # Se der timeout, significa que o banner não apareceu, o que é ótimo.
             logger.info("Nenhum banner inicial apareceu. Continuando...")
         except Exception as e:
-            logger.warning(f"Aviso ao tentar fechar o banner (o robô continuará): {e}")
+            logger.warning(f"Aviso ao tentar fechar o banner: {e}")
 
-    async def select_account_type(self, is_demo: bool):
-        """Troca entre a conta Demo e a Real na aba principal"""
+    async def select_account_type(self, is_demo: bool, target_page=None):
+        """Troca entre a conta Demo e a Real"""
+        page = target_page if target_page else self.main_page
         tipo_conta = "Conta demo" if is_demo else "Conta real"
         logger.info(f"Configurando plataforma para operar na: {tipo_conta}")
-        
         try:
-            await self.main_page.locator('xpath=//*[@id="header"]/div/div[2]/button[2]').click()
+            await page.locator('xpath=//*[@id="header"]/div/div[2]/button[2]').click()
             await asyncio.sleep(1)
-            
-            await self.main_page.locator(f'li:has-text("{tipo_conta}")').first.click()
+            await page.locator(f'li:has-text("{tipo_conta}")').first.click()
             await asyncio.sleep(1)
-            
-            await self.main_page.locator(f'.ant-card-bordered:has-text("{tipo_conta}")').click()
+            await page.locator(f'.ant-card-bordered:has-text("{tipo_conta}")').click()
             await asyncio.sleep(0.5)
-            
-            await self.main_page.locator('button:has-text("Alterar tipo de conta")').click()
-            
-            await self.main_page.wait_for_load_state('networkidle')
+            await page.locator('button:has-text("Alterar tipo de conta")').click()
+            await page.wait_for_load_state('networkidle')
             await asyncio.sleep(2)
             logger.info(f"✅ Conta {tipo_conta} selecionada e confirmada!")
-            
         except Exception as e:
-            logger.error(f"⚠️ Erro ao tentar trocar de conta. O bot tentará continuar. Detalhes: {e}")
+            logger.error(f"⚠️ Erro ao tentar trocar de conta: {e}")
 
     async def setup_asset_page(self, symbol: str, amount: float, close_time: str, asset_type: str = "Crypto"):
         """Acessa a plataforma e deixa o ativo e os DADOS já 100% preenchidos"""
         logger.info(f"Configurando aba para o ativo {symbol}...")
+
+        # NOVO: Salva a configuração para caso a aba caia e precise ser recuperada
+        self.asset_configs[symbol] = {
+            "amount": amount,
+            "close_time": close_time,
+            "asset_type": asset_type
+        }
         
         try:
             if not self.pages: 
