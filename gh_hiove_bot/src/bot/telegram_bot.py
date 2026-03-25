@@ -1,7 +1,7 @@
 import logging, asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from core.database import save_user_config, load_user_config
+from core.database import save_user_config, load_user_config, get_session_profit
 from core.config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID
 
 logger = logging.getLogger(__name__)
@@ -359,19 +359,72 @@ class TradingTelegramBot:
     # (Os métodos status_command, send_alert, start_polling e stop continuam iguais ao anterior)
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_auth(update): return
+        
         if not self.setup_event.is_set():
-            await update.message.reply_text("⚠️ O robô ainda não foi inicializado. Use /start para configurar.")
+            await update.message.reply_text("⚠️ O robô ainda não foi inicializado. Use /start para iniciar uma sessão.")
             return
-        await update.message.reply_text("⏳ Consultando status das estratégias...")
+
+        # Envia uma mensagem de carregamento, pois ir ler a tela da corretora pode demorar 1 ou 2 segundos
+        status_msg = await update.message.reply_text("⏳ *Consultando dados ao vivo da corretora...*", parse_mode='Markdown')
+
+        # ==========================================
+        # 1. OBTER DADOS AO VIVO (Saldo e Lucro)
+        # ==========================================
+        saldo_atual = 0.0
+        if self.broker and self.broker.scraper:
+            # Tenta ler o saldo usando a aba do primeiro ativo aberto para ser mais rápido
+            ativo_base = self.user_config["assets"][0] if self.user_config.get("assets") else None
+            saldo_atual = await self.broker.scraper.get_balance(ativo_base)
+        
+        lucro_sessao = 0.0
+        session_start = self.user_config.get("session_start")
+        if session_start:
+            lucro_sessao = await get_session_profit(session_start)
+
+        # ==========================================
+        # 2. FORMATAR TEXTOS DA CONFIGURAÇÃO
+        # ==========================================
+        # Formata a string do Martingale
+        mg_str = "❌ Desativado"
+        if self.user_config.get('martingale_type') and self.user_config['martingale_type'] != "Nenhum":
+            mg_str = f"{self.user_config['martingale_type']} | {self.user_config['martingale_steps']} passos | {self.user_config['martingale_multiplier']}x"
+
+        # Formata a lista de estratégias ativas
         if self.manager and self.manager.strategies:
             active_strats = [s.name.replace('_', '\\_') for s in self.manager.strategies if getattr(s, 'is_running', False)]
-            strat_msg = "\n".join([f"✅ {name}" for name in active_strats]) if active_strats else "❌ Nenhuma estratégia rodando."
+            strat_msg = "\n".join([f"✅ {name}" for name in active_strats]) if active_strats else "❌ Nenhuma estratégia a rodar."
         else:
-            strat_msg = "Nenhum gerenciador de estratégias vinculado."
+            strat_msg = "📡 Aguardando sinais do MT5 (Webhook)..." if self.user_config.get('mode') == 'live' else "❌ Nenhum gerenciador vinculado."
 
-        tipo_conta = "DEMO" if self.user_config['is_demo'] else "REAL"
-        msg = f"📊 *Status do Sistema*\nModo: {tipo_conta}\n\n*Estratégias Ativas:*\n{strat_msg}"
-        await update.message.reply_text(msg, parse_mode='Markdown')
+        # Captura os dados de forma segura (com valores padrão caso algo falte)
+        tipo_conta = "DEMO 🟢" if self.user_config.get('is_demo') else "REAL 🔴"
+        modo = self.user_config.get('mode', 'Desconhecido').upper().replace('_', ' ')
+        perfil = self.user_config.get('profile', 'Balanceado')
+        tempo = self.user_config.get('duration', '01:00')
+        valor = float(self.user_config.get('amount', 1.0))
+        tp = float(self.user_config.get('take_profit', 0.0))
+        sl = float(self.user_config.get('stop_loss', 0.0))
+
+        # ==========================================
+        # 3. MONTAR A MENSAGEM FINAL
+        # ==========================================
+        msg = (
+            f"📊 *STATUS DO SISTEMA*\n\n"
+            f"▫️ Conta: {tipo_conta}\n"
+            f"▫️ Modo: {modo}\n"
+            f"▫️ Perfil: {perfil}\n"
+            f"▫️ Tempo: {tempo}\n"
+            f"▫️ Valor Ordem: ${valor:.2f}\n"
+            f"🔄 Martingale: {mg_str}\n"
+            f"🎯 Take Profit: ${tp:.2f}\n"
+            f"🛑 Stop Loss: ${sl:.2f}\n\n"
+            f"💰 *Balanço Atual:* ${saldo_atual:.2f}\n"
+            f"📈 *Lucro da Sessão:* ${lucro_sessao:.2f}\n\n"
+            f"*Estratégias Ativas:*\n{strat_msg}"
+        )
+
+        # Edita a mensagem de carregamento com os dados reais
+        await status_msg.edit_text(text=msg, parse_mode='Markdown')
 
     async def send_alert(self, message: str):
         if not self.app or not self.admin_id: return
