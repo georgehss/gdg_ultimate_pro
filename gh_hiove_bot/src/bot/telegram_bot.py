@@ -447,7 +447,7 @@ class TradingTelegramBot:
                 if not self.user_config["assets"]:
                     await query.answer("Escolha pelo menos 1 ativo!", show_alert=True)
                     return
-                self.setup_step = "timeframe"
+                self.setup_step = "duration"
             else:
                 # Adiciona ou remove o ativo da lista (Toggle)
                 if asset in self.user_config["assets"]:
