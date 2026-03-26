@@ -219,17 +219,22 @@ class HioveBrokerAPI:
             mg_steps = self.user_config.get("martingale_steps", 0)
             mg_mult = self.user_config.get("martingale_multiplier", 2.0)
 
-            # Empate ou Win limpam o histórico do ativo (volta para entrada normal)
-            if status in ["WIN", "EMPATE"]:
+            # LÓGICA DE EMPATE: 
+            # Se for Win, limpa sempre.
+            # Se for Empate e for a entrada normal (current_step == 0), limpa (não faz nada).
+            if status == "WIN" or (status == "EMPATE" and current_step == 0):
                 self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
                 
-            elif status == "LOSS" and mg_type != "Nenhum":
+            # Se for LOSS, ou se for EMPATE DENTRO DO MARTINGALE (current_step > 0):
+            elif (status == "LOSS" or (status == "EMPATE" and current_step > 0)) and mg_type != "Nenhum":
                 if current_step < mg_steps:
                     next_step = current_step + 1
                     next_amount = amount * mg_mult
 
                     if mg_type == "Vela":
-                        msg_mg = f"🔄 *Martingale Vela* acionado! (Passo {next_step}/{mg_steps})\nEntrando imediatamente com ${next_amount:.2f} em {symbol} ({direction})."
+                        # Mensagem personalizada para caso tenha sido empate
+                        motivo = "Empate" if status == "EMPATE" else "Loss"
+                        msg_mg = f"🔄 *Martingale Vela* acionado por {motivo}! (Passo {next_step}/{mg_steps})\nEntrando imediatamente com ${next_amount:.2f} em {symbol} ({direction})."
                         asyncio.create_task(telegram_alert_cb(msg_mg)) # Envia em 2º plano
                         # Chama a si mesmo imediatamente para pegar a próxima vela
                         asyncio.create_task(self.place_order_and_monitor(
@@ -239,7 +244,8 @@ class HioveBrokerAPI:
                     elif mg_type == "Sinal":
                         # Apenas guarda o valor na gaveta. O bot aplica no próximo sinal que a estratégia emitir
                         self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount}
-                        msg_mg = f"🔄 *Martingale Sinal* preparado (Passo {next_step}/{mg_steps}).\nO próximo sinal de {symbol} entrará pesando ${next_amount:.2f}."
+                        motivo = "Empate" if status == "EMPATE" else "Loss"
+                        msg_mg = f"🔄 *Martingale Sinal* preparado após {motivo} (Passo {next_step}/{mg_steps}).\nO próximo sinal de {symbol} entrará pesando ${next_amount:.2f}."
                         await telegram_alert_cb(msg_mg)
                 else:
                     msg_mg = f"⚠️ *Martingale Finalizado* em {symbol}. Limite de {mg_steps} passos batido. Retornando ao valor normal."
