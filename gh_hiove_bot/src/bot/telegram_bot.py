@@ -272,13 +272,11 @@ class TradingTelegramBot:
         # NOVOS COMANDOS DE PARADA E PÓS-PARADA
         # ==========================================
         if data == 'stop_yes':
-            self.stop_session_event.set() # Avisa o main.py para destruir a sessão
-            
-            # Muda a mensagem rapidamente para dar feedback de carregamento (pois ler o saldo leva 1-2s)
-            await query.edit_message_text("⏳ *Encerrando sessão e calculando resultados...*", parse_mode='Markdown')
+            # 1. Muda a mensagem rapidamente para dar feedback
+            await query.edit_message_text("⏳ *Calculando resultados e encerrando sessão...*", parse_mode='Markdown')
             
             # ==========================================
-            # LER RESULTADOS FINAIS DA SESSÃO
+            # 2. LER RESULTADOS FINAIS (COM NAVEGADOR AINDA ABERTO)
             # ==========================================
             saldo_atual = 0.0
             if self.broker and self.broker.scraper:
@@ -291,7 +289,12 @@ class TradingTelegramBot:
                 lucro_sessao = await get_session_profit(session_start)
 
             # ==========================================
-            # MONTAR A MENSAGEM FINAL
+            # 3. AGORA SIM, MANDA DESTRUIR A SESSÃO!
+            # ==========================================
+            self.stop_session_event.set() 
+
+            # ==========================================
+            # 4. MONTAR A MENSAGEM FINAL
             # ==========================================
             msg_resumo = (
                 f"✅ *Sessão Encerrada com Sucesso!*\n"
