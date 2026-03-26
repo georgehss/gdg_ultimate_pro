@@ -1,4 +1,4 @@
-import asyncio, logging, signal, sys
+import asyncio, logging, signal, sys, os
 from datetime import datetime
 from core.config import HIOVE_EMAIL, HIOVE_PASSWORD
 from api.broker_api import HioveBrokerAPI
@@ -17,7 +17,17 @@ if sys.stdout and sys.stdout.encoding.lower() != 'utf-8':
 if sys.stderr and sys.stderr.encoding.lower() != 'utf-8':
     sys.stderr.reconfigure(encoding='utf-8')
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+os.makedirs("logs", exist_ok=True)
+
+# Configura para imprimir no terminal E guardar num ficheiro
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("logs/bot_hiove.log", encoding='utf-8'), # Guarda num ficheiro
+        logging.StreamHandler(sys.stdout) # Mantém no terminal
+    ]
+)
 logger = logging.getLogger(__name__)
 
 async def run_session(tg_bot, global_stop_event):

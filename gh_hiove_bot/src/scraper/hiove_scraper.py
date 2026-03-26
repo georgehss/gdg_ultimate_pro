@@ -25,16 +25,23 @@ class HioveScraper:
         logger.info("Iniciando o navegador do robô...")
         self.playwright = await async_playwright().start()
         
+        # 1. Define headless para True (ou use uma variável de configuração)
         self.browser = await self.playwright.chromium.launch(
-            headless=False,
+            headless=True, 
             args=[
-                '--start-maximized',
-                '--disable-background-timer-throttling', # Impede de pausar os temporizadores do relógio
-                '--disable-backgrounding-occluded-windows', # Mantém as janelas cobertas activas
-                '--disable-renderer-backgrounding' # Impede de congelar o processo de renderização (vela/gráfico)
+                '--disable-background-timer-throttling', 
+                '--disable-backgrounding-occluded-windows', 
+                '--disable-renderer-backgrounding',
+                '--disable-blink-features=AutomationControlled' # Ajuda a esconder que é um robô
             ]
         )
-        self.context = await self.browser.new_context(no_viewport=True)
+        
+        # 2. Força um User-Agent real e uma resolução de monitor (Viewport)
+        self.context = await self.browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        )
+        
         self.main_page = await self.context.new_page()
         
         try:
@@ -451,10 +458,11 @@ class HioveScraper:
                 return {"id": f"real_scraper_order_{symbol}"}
 
             except PlaywrightTimeoutError:
-                logger.error(f"❌ [{symbol}] Os botões de ordem sumiram da tela.")
-                return None
+                logger.error(f"❌ [{symbol}] Os botões de ordem sumiram da tela. A tirar print do ecrã...")
+                await page.screenshot(path=f"logs/erro_timeout_{symbol}.png")
             except Exception as e:
                 logger.error(f"❌ [{symbol}] Erro inesperado ao clicar: {e}")
+                await page.screenshot(path=f"logs/erro_inesperado_{symbol}.png")
                 return None
             
     async def close_asset_tabs(self):
@@ -642,6 +650,7 @@ class HioveScraper:
                 logger.info(f"🔄 [{symbol}] Nenhum resultado compatível na tentativa {tentativa + 1}. Aguardando...")
                 
             logger.error(f"🛑 [{symbol}] ESGOTADO! O resultado não apareceu no histórico após 6 tentativas cruzando os dados.")
+            await page.screenshot(path=f"logs/erro_historico_{symbol}.png")
             try:
                 xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
                 await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
