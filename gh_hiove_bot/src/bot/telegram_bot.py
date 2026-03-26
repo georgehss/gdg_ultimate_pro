@@ -22,7 +22,8 @@ class TradingTelegramBot:
             "is_demo": True,
             "mode": "strategy",
             "profile": "Balanceado", 
-            "assets": [],       
+            "assets": [],
+            "timeframe": "1m",     
             "duration": "01:00",
             "amount": 1.0,
             "martingale_type": "Nenhum",   
@@ -106,8 +107,9 @@ class TradingTelegramBot:
                     f"▫️ Conta: {tipo_conta}\n"
                     f"▫️ Modo: {modo}\n"
                     f"▫️ Perfil: {perfil}\n"
+                    f"▫️ Análise Gráfica: {self.user_config.get('timeframe', '1m')}\n"
                     f"▫️ Ativos: {ativos}\n"
-                    f"▫️ Tempo: {tempo}\n"
+                    f"▫️ Tempo Expiração: {tempo}\n"
                     f"▫️ Valor Ordem: ${valor:.2f}\n"
                     f"🔄 Martingale: {mg_str}\n"
                     f"🎯 Take Profit: ${tp:.2f}\n"
@@ -157,6 +159,15 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("⚙️ Customizado (Valores padrão originais)", callback_data='prof_Customizado')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')] # <--- Adicionado
             ]
+
+        elif self.setup_step == "timeframe":
+            text = "📊 *Tempo de Análise (Timeframe)*\nQual o tempo gráfico das velas para o robô analisar?"
+            keyboard = [
+                [InlineKeyboardButton("1 Minuto", callback_data='tf_1m'),
+                 InlineKeyboardButton("5 Minutos", callback_data='tf_5m')],
+                [InlineKeyboardButton("15 Minutos", callback_data='tf_15m')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_timeframe')]
+            ]
             
         elif self.setup_step == "assets":
             text = "🪙 *Ativos*\nClique nos ativos que deseja operar e depois em Continuar:"
@@ -170,7 +181,7 @@ class TradingTelegramBot:
                  InlineKeyboardButton(eth_text, callback_data='ast_ETH/USDT')],
                 [InlineKeyboardButton(sol_text, callback_data='ast_SOL/USDT'),
                  InlineKeyboardButton(btc_text, callback_data='ast_BTC/USDT')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_assets'), # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_assets'),
                  InlineKeyboardButton("➡️ Continuar", callback_data='ast_done')] 
             ]
 
@@ -376,6 +387,8 @@ class TradingTelegramBot:
                 else:
                     self.setup_step = 'profile'
             elif step == 'duration':
+                self.setup_step = 'timeframe' # <--- MUDE DE 'assets' PARA 'timeframe'
+            elif step == 'timeframe':         # <--- ADICIONE ESTA LINHA
                 self.setup_step = 'assets'
             elif step == 'amount':
                 self.setup_step = 'duration'
@@ -425,7 +438,7 @@ class TradingTelegramBot:
         # NOVO PASSO: Perfil de Operação
         elif data.startswith('prof_'):
             self.user_config["profile"] = data.split('_')[1]
-            self.setup_step = "assets"
+            self.setup_step = "timeframe"
             
         # Passo 3: Ativos
         elif data.startswith('ast_'):
@@ -434,13 +447,18 @@ class TradingTelegramBot:
                 if not self.user_config["assets"]:
                     await query.answer("Escolha pelo menos 1 ativo!", show_alert=True)
                     return
-                self.setup_step = "duration"
+                self.setup_step = "timeframe"
             else:
                 # Adiciona ou remove o ativo da lista (Toggle)
                 if asset in self.user_config["assets"]:
                     self.user_config["assets"].remove(asset)
                 else:
                     self.user_config["assets"].append(asset)
+
+        # NOVO PASSO 3.5: Timeframe
+        elif data.startswith('tf_'):
+            self.user_config["timeframe"] = data.split('_')[1]
+            self.setup_step = "assets"
                     
         # Passo 4: Duração
         elif data.startswith('dur_'):
@@ -541,7 +559,8 @@ class TradingTelegramBot:
             f"▫️ Conta: {tipo_conta}\n"
             f"▫️ Modo: {modo}\n"
             f"▫️ Perfil: {perfil}\n"
-            f"▫️ Tempo: {tempo}\n"
+            f"▫️ Análise Gráfica: {self.user_config.get('timeframe', '1m')}\n"
+            f"▫️ Tempo Expiração: {tempo}\n"
             f"▫️ Valor Ordem: ${valor:.2f}\n"
             f"🔄 Martingale: {mg_str}\n"
             f"🎯 Take Profit: ${tp:.2f}\n"
@@ -619,6 +638,7 @@ class TradingTelegramBot:
             f"▫️ Conta: {'DEMO 🟢' if self.user_config['is_demo'] else 'REAL 🔴'}\n"
             f"▫️ Modo: {self.user_config['mode'].upper().replace('_', ' ')}\n"
             f"▫️ Perfil: {self.user_config.get('profile', 'Balanceado')}\n"
+            f"▫️ Análise Gráfica: {self.user_config.get('timeframe', '1m')}\n"
             f"▫️ Ativos: {', '.join(self.user_config['assets'])}\n"
             f"▫️ Tempo: {self.user_config['duration']}\n"
             f"▫️ Valor Ordem: ${self.user_config['amount']}\n"

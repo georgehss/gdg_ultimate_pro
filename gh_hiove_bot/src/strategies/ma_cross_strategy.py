@@ -9,7 +9,13 @@ class MACrossStrategy(BaseStrategy):
     def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado"):
         super().__init__(name=f"MACrossPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
-        self.timeframe = timeframe  
+        self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
+        
+        # Converte para segundos para o relógio da estratégia
+        if timeframe == "5m": self.timeframe_seconds = 300
+        elif timeframe == "15m": self.timeframe_seconds = 900
+        else: self.timeframe_seconds = 60 # Padrão 1 minuto
+        
         self.profile = profile
         
         # Aplica as configurações baseadas no perfil escolhido
@@ -52,7 +58,7 @@ class MACrossStrategy(BaseStrategy):
         logger.info(f"[{self.name}] A processar MA Cross Pro (EMA {self.fast_period}/{self.slow_period}) + SMMA + RSI + ADX + Volume...")
         
         limit_klines = max(150, self.long_ma_period + 50)
-        klines = await self.broker.get_klines(symbol=self.symbol, interval="1m", limit=limit_klines)
+        klines = await self.broker.get_klines(symbol=self.symbol, interval=self.timeframe_str, limit=limit_klines)
         
         if not klines:
             logger.warning(f"[{self.name}] Sem dados da API. A aguardar próximo ciclo.")
@@ -216,9 +222,9 @@ class MACrossStrategy(BaseStrategy):
         while self.is_running:
             try:
                 agora = time.time()
-                segundos_atuais = agora % 60
-                espera = 60 - segundos_atuais
-                await asyncio.sleep(espera + 1.0) 
+                segundos_atuais = agora % self.timeframe_seconds
+                espera = self.timeframe_seconds - segundos_atuais 
+                await asyncio.sleep(espera + 1.0)
                 
                 resultado = await self.analyze_market()
                 if resultado:

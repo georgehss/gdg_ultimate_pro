@@ -27,7 +27,7 @@ class HioveScraper:
         
         # 1. Define headless para True (ou use uma variável de configuração)
         self.browser = await self.playwright.chromium.launch(
-            headless=True, 
+            headless=False, 
             args=[
                 '--disable-background-timer-throttling', 
                 '--disable-backgrounding-occluded-windows', 

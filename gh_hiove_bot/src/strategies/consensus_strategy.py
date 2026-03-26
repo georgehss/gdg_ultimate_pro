@@ -7,10 +7,14 @@ from .engulf_ma_strategy import EngulfMAStrategy
 logger = logging.getLogger(__name__)
 
 class ConsensusStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, min_votes_required=1, profile="Balanceado"):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe="1m", min_votes_required=1, profile="Balanceado"):
         super().__init__(name=f"Consensus_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
-        self.timeframe = timeframe
+        self.timeframe_str = timeframe
+        
+        if timeframe == "5m": self.timeframe_seconds = 300
+        elif timeframe == "15m": self.timeframe_seconds = 900
+        else: self.timeframe_seconds = 60
         self.min_votes_required = min_votes_required 
         
         # Instancia as 3 estratégias silenciosamente repassando o perfil escolhido!
@@ -78,9 +82,9 @@ class ConsensusStrategy(BaseStrategy):
         while self.is_running:
             try:
                 agora = time.time()
-                segundos_atuais = agora % 60
-                espera = 60 - segundos_atuais
-                await asyncio.sleep(espera + 1.0) 
+                segundos_atuais = agora % self.timeframe_seconds
+                espera = self.timeframe_seconds - segundos_atuais
+                await asyncio.sleep(espera + 1.0)
                 
                 # Pergunta ao coordenador qual foi a decisão
                 resultado = await self.analyze_market()
