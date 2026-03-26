@@ -134,7 +134,8 @@ class TradingTelegramBot:
             keyboard = [
                 [InlineKeyboardButton("📈 Estratégias Internas", callback_data='mod_strategy_menu')],
                 [InlineKeyboardButton("📡 Sinais MT5 (Webhook)", callback_data='mod_live')],
-                [InlineKeyboardButton("📋 Lista de Sinais (Em breve)", callback_data='mod_list')]
+                [InlineKeyboardButton("📋 Lista de Sinais (Em breve)", callback_data='mod_list')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_mode')] # <--- Adicionado
             ]
             
         elif self.setup_step == "strategy_type":
@@ -144,7 +145,7 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("📊 Estratégia MA Cross", callback_data='strat_strat_ma')],
                 [InlineKeyboardButton("📊 Estratégia Engolfo MA", callback_data='strat_strat_engulf')],
                 [InlineKeyboardButton("🤝 Consenso (As 3 Juntas)", callback_data='strat_strat_consensus')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='strat_back')]
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_strategy_type')] # <--- Atualizado
             ]
 
         elif self.setup_step == "profile":
@@ -153,12 +154,12 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("🛡️ Conservador (Alta precisão, menos entradas)", callback_data='prof_Conservador')],
                 [InlineKeyboardButton("⚖️ Balanceado (Padrão)", callback_data='prof_Balanceado')],
                 [InlineKeyboardButton("🔥 Agressivo (Muitas entradas, maior risco)", callback_data='prof_Agressivo')],
-                [InlineKeyboardButton("⚙️ Customizado (Valores padrão originais)", callback_data='prof_Customizado')]
+                [InlineKeyboardButton("⚙️ Customizado (Valores padrão originais)", callback_data='prof_Customizado')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')] # <--- Adicionado
             ]
             
         elif self.setup_step == "assets":
             text = "🪙 *Ativos*\nClique nos ativos que deseja operar e depois em Continuar:"
-            # Adiciona um "✅" visual se o ativo já estiver na lista
             xrp_text = "✅ XRP" if "XRP/USDT" in self.user_config["assets"] else "XRP"
             eth_text = "✅ ETH" if "ETH/USDT" in self.user_config["assets"] else "ETH"
             sol_text = "✅ SOL" if "SOL/USDT" in self.user_config["assets"] else "SOL"
@@ -169,7 +170,8 @@ class TradingTelegramBot:
                  InlineKeyboardButton(eth_text, callback_data='ast_ETH/USDT')],
                 [InlineKeyboardButton(sol_text, callback_data='ast_SOL/USDT'),
                  InlineKeyboardButton(btc_text, callback_data='ast_BTC/USDT')],
-                [InlineKeyboardButton("➡️ Continuar", callback_data='ast_done')]
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_assets'), # <--- Adicionado
+                 InlineKeyboardButton("➡️ Continuar", callback_data='ast_done')] 
             ]
 
         elif self.setup_step == "duration":
@@ -177,7 +179,8 @@ class TradingTelegramBot:
             keyboard = [
                 [InlineKeyboardButton("1 Minuto", callback_data='dur_01:00'),
                  InlineKeyboardButton("5 Minutos", callback_data='dur_05:00')],
-                [InlineKeyboardButton("15 Minutos", callback_data='dur_15:00')]
+                [InlineKeyboardButton("15 Minutos", callback_data='dur_15:00')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_duration')] # <--- Adicionado
             ]
             
         elif self.setup_step == "amount":
@@ -188,7 +191,8 @@ class TradingTelegramBot:
                  InlineKeyboardButton("$ 3", callback_data='amt_3')],
                 [InlineKeyboardButton("$ 5", callback_data='amt_5'),
                  InlineKeyboardButton("$ 10", callback_data='amt_10'),
-                 InlineKeyboardButton("$ 20", callback_data='amt_20')]
+                 InlineKeyboardButton("$ 20", callback_data='amt_20')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_amount')] # <--- Adicionado
             ]
 
         elif self.setup_step == "martingale_type":
@@ -196,7 +200,8 @@ class TradingTelegramBot:
             keyboard = [
                 [InlineKeyboardButton("❌ Nenhum", callback_data='mgtype_Nenhum')],
                 [InlineKeyboardButton("🕯️ Na Próxima Vela", callback_data='mgtype_Vela')],
-                [InlineKeyboardButton("📡 No Próximo Sinal", callback_data='mgtype_Sinal')]
+                [InlineKeyboardButton("📡 No Próximo Sinal", callback_data='mgtype_Sinal')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_type')] # <--- Adicionado
             ]
 
         elif self.setup_step == "martingale_steps":
@@ -207,7 +212,8 @@ class TradingTelegramBot:
                  InlineKeyboardButton("3 Passos", callback_data='mgstep_3')],
                 [InlineKeyboardButton("4 Passos", callback_data='mgstep_4'),
                  InlineKeyboardButton("5 Passos", callback_data='mgstep_5'),
-                 InlineKeyboardButton("6 Passos", callback_data='mgstep_6')]
+                 InlineKeyboardButton("6 Passos", callback_data='mgstep_6')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_steps')] # <--- Adicionado
             ]
 
         elif self.setup_step == "martingale_multiplier":
@@ -220,7 +226,8 @@ class TradingTelegramBot:
                  InlineKeyboardButton("2.0 x", callback_data='mgmult_2.0'),
                  InlineKeyboardButton("2.2 x", callback_data='mgmult_2.2')],
                 [InlineKeyboardButton("2.5 x", callback_data='mgmult_2.5'),
-                 InlineKeyboardButton("3.0 x", callback_data='mgmult_3.0')]
+                 InlineKeyboardButton("3.0 x", callback_data='mgmult_3.0')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_multiplier')] # <--- Adicionado
             ]
 
         elif self.setup_step == "take_profit":
@@ -232,7 +239,8 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("$ 10", callback_data='tp_10.0'),
                  InlineKeyboardButton("$ 20", callback_data='tp_20.0')],
                 [InlineKeyboardButton("$ 50", callback_data='tp_50.0'),
-                 InlineKeyboardButton("$ 100", callback_data='tp_100.0')]
+                 InlineKeyboardButton("$ 100", callback_data='tp_100.0')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_take_profit')] # <--- Adicionado
             ]
 
         elif self.setup_step == "stop_loss":
@@ -244,7 +252,8 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("-$ 10", callback_data='sl_-10.0'),
                  InlineKeyboardButton("-$ 20", callback_data='sl_-20.0')],
                 [InlineKeyboardButton("-$ 50", callback_data='sl_-50.0'),
-                 InlineKeyboardButton("-$ 100", callback_data='sl_-100.0')]
+                 InlineKeyboardButton("-$ 100", callback_data='sl_-100.0')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_stop_loss')] # <--- Adicionado
             ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -344,6 +353,46 @@ class TradingTelegramBot:
         if self.setup_event.is_set():
             await query.edit_message_text(text="⚠️ O robô já foi inicializado e está operando.")
             return
+        
+        # ==========================================
+        # LÓGICA DO BOTÃO VOLTAR
+        # ==========================================
+        if data.startswith('back_'):
+            step = data.replace('back_', '')
+            
+            if step == 'mode':
+                self.setup_step = 'account'
+            elif step == 'strategy_type':
+                self.setup_step = 'mode'
+            elif step == 'profile':
+                self.setup_step = 'strategy_type'
+            elif step == 'assets':
+                # Se for live ou list, ele veio direto de 'mode'. Se for estratégia, veio de 'profile'
+                if self.user_config.get("mode") in ["live", "list"]:
+                    self.setup_step = 'mode'
+                else:
+                    self.setup_step = 'profile'
+            elif step == 'duration':
+                self.setup_step = 'assets'
+            elif step == 'amount':
+                self.setup_step = 'duration'
+            elif step == 'martingale_type':
+                self.setup_step = 'amount'
+            elif step == 'martingale_steps':
+                self.setup_step = 'martingale_type'
+            elif step == 'martingale_multiplier':
+                self.setup_step = 'martingale_steps'
+            elif step == 'take_profit':
+                # Se o Martingale estava desativado, o passo anterior foi o tipo de martingale
+                if self.user_config.get("martingale_type") == "Nenhum":
+                    self.setup_step = 'martingale_type'
+                else:
+                    self.setup_step = 'martingale_multiplier'
+            elif step == 'stop_loss':
+                self.setup_step = 'take_profit'
+
+            await self.send_setup_step(query.message, is_edit=True)
+            return
 
         # Passo 1: Conta
         if data.startswith('acc_'):
@@ -367,11 +416,8 @@ class TradingTelegramBot:
         # Passo 2.1: Submenu de Estratégias Internas
         elif data.startswith('strat_'):
             strat_escolhida = data.replace('strat_', '', 1)
-            if strat_escolhida == "back":
-                self.setup_step = "mode"
-            else:
-                self.user_config["mode"] = strat_escolhida
-                self.setup_step = "profile"
+            self.user_config["mode"] = strat_escolhida
+            self.setup_step = "profile"
                 
         # NOVO PASSO: Perfil de Operação
         elif data.startswith('prof_'):
