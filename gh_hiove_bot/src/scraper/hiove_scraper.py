@@ -567,116 +567,104 @@ class HioveScraper:
                     except Exception as e:
                         logger.warning(f"⚠️ [{symbol}] Falha ao alternar abas de refresh: {e}")
                     
-                    await asyncio.sleep(2.0)
+                    # Espera 1.5s para a aba carregar os itens novos
+                    await asyncio.sleep(1.5)
                 
-                # Coleta todos os itens da lista
-                xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
-                itens = await page.locator(f'xpath={xpath_itens}').all()
-                
-                logger.debug(f"📋 [{symbol}] Foram encontradas {len(itens)} operações na lista do histórico.")
-                
-                if not itens:
-                    logger.debug(f"⚠️ [{symbol}] A lista de histórico está vazia nesta tentativa.")
-                
-                for index, item in enumerate(itens):
-                    try:
-                        logger.debug(f"🔍 [{symbol}] Analisando linha {index + 1}...")
-                        
-                        # --- A. VERIFICA O ATIVO ---
-                        elemento_titulo = item.locator('h4.ant-list-item-meta-title span')
-                        if not await elemento_titulo.is_visible(): 
-                            logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Título do ativo não visível.")
-                            continue
+                    # =======================================================
+                    # AGORA ESTÁ DENTRO DO LOOP! Ele confere a cada tentativa
+                    # =======================================================
+                    xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
+                    itens = await page.locator(f'xpath={xpath_itens}').all()
+                    
+                    logger.debug(f"📋 [{symbol}] Foram encontradas {len(itens)} operações na lista. Lendo as 3 primeiras...")
+                    
+                    if not itens:
+                        logger.debug(f"⚠️ [{symbol}] A lista de histórico está vazia nesta tentativa.")
+                        continue # Volta para o topo do FOR e tenta o próximo clique
+                    
+                    for index, item in enumerate(itens[:3]):
+                        try:
+                            logger.debug(f"🔍 [{symbol}] Analisando linha {index + 1}...")
                             
-                        texto_ativo = await elemento_titulo.inner_text()
-                        if texto_ativo != symbol:
-                            logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Ativo diferente. Encontrado '{texto_ativo}', procurado '{symbol}'.")
-                            continue
-                            
-                        # --- B. VERIFICA A MEMÓRIA (ANTI-REPETIÇÃO) ---
-                        elemento_tempo = item.locator('.ant-list-item-meta-description span').first
-                        texto_tempo = await elemento_tempo.inner_text() 
-                        
-                        if self.last_trade_times.get(symbol) == texto_tempo:
-                            logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Tempo '{texto_tempo}' já está na memória (Esta é a operação passada!).")
-                            continue 
-
-                        # --- C. VERIFICA O TEMPO DO SINAL (REGRA DOS 30 SEGUNDOS) ---
-                        if hora_sinal:
-                            try:
-                                from datetime import datetime, timedelta
-                                hora_obj = datetime.strptime(hora_sinal, "%H:%M:%S")
-                                if hora_obj.second <= 30:
-                                    minuto_esperado = hora_obj.strftime("%H:%M")
-                                else:
-                                    minuto_esperado = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
+                            # --- A. VERIFICA O ATIVO ---
+                            elemento_titulo = item.locator('h4.ant-list-item-meta-title')
+                            if not await elemento_titulo.is_visible(): continue
                                 
-                                if minuto_esperado not in texto_tempo:
-                                    logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Regra de tempo falhou. O texto da corretora '{texto_tempo}' não contém o minuto esperado '{minuto_esperado}'.")
-                                    continue
-                            except Exception as e:
-                                logger.error(f"❌ [{symbol}] Erro interno ao calcular a regra dos 30 segundos: {e}")
+                            texto_ativo = await elemento_titulo.inner_text()
+                            if texto_ativo != symbol: continue
+                                
+                            # --- B. VERIFICA O TEMPO E A MEMÓRIA ---
+                            elemento_tempo = item.locator('.ant-list-item-meta-description span').first
+                            texto_tempo = await elemento_tempo.inner_text() 
                             
-                        # --- D. VERIFICA O VALOR (ANTI-MARTINGALE FALSO) ---
-                        elemento_valor = item.locator('h5')
-                        texto_valor = await elemento_valor.inner_text() 
-                        classes_css = await elemento_valor.get_attribute('class')
-                        
-                        try:
-                            lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
-                        except ValueError:
-                            logger.error(f"❌ [{symbol}] Erro ao converter o texto de valor '{texto_valor}' para número na linha {index + 1}.")
-                            continue
-                        
-                        if amount is not None and 'ant-typography-danger' in classes_css:
-                            # Flexibiliza a tolerância para caso a corretora engula os centavos
-                            if abs(lucro_bruto) < float(amount) * 0.8:
-                                logger.debug(f"⏭️ [{symbol}] Linha {index + 1} ignorada: Falso LOSS de Martingale.")
+                            if self.last_trade_times.get(symbol) == texto_tempo:
+                                logger.debug(f"⏭️ [{symbol}] Linha ignorada: Tempo '{texto_tempo}' já está na memória.")
+                                continue 
+
+                            # --- C. VERIFICA A REGRA DOS 30 SEGUNDOS ---
+                            if hora_sinal:
+                                try:
+                                    from datetime import datetime, timedelta
+                                    hora_obj = datetime.strptime(hora_sinal, "%H:%M:%S")
+                                    if hora_obj.second <= 30:
+                                        minuto_esperado = hora_obj.strftime("%H:%M")
+                                    else:
+                                        minuto_esperado = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
+                                    
+                                    if minuto_esperado not in texto_tempo:
+                                        continue
+                                except Exception as e:
+                                    logger.error(f"❌ [{symbol}] Erro na regra de tempo: {e}")
+                                
+                            # --- D. VERIFICA O VALOR E RESULTADO ---
+                            elemento_valor = item.locator('h5')
+                            texto_valor = await elemento_valor.inner_text() 
+                            classes_css = await elemento_valor.get_attribute('class')
+                            
+                            try:
+                                lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
+                            except ValueError:
                                 continue
-
-                        # --- DEFINIÇÃO DO RESULTADO FINAL ---
-                        if 'ant-typography-success' in classes_css:
-                            status = "WIN"
-                        elif 'ant-typography-danger' in classes_css:
-                            status = "LOSS"
-                        elif 'ant-typography-secondary' in classes_css:
-                            status = "EMPATE"
-                        else:
-                            logger.warning(f"⚠️ [{symbol}] Classes CSS desconhecidas na linha {index + 1}: {classes_css}")
-                            status = "DESCONHECIDO"
-
-                        logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
-                        
-                        # Salva na memória
-                        self.last_trade_times[symbol] = texto_tempo
-
-                        # Tenta fechar o Histórico voltando para a aba Operações
-                        try:
-                            await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
-                            logger.debug(f"🖱️ [{symbol}] Voltou para a aba Operações com sucesso após leitura.")
-                        except Exception as e: 
-                            logger.debug(f"⚠️ [{symbol}] Não foi possível voltar à aba Operações no fechamento: {e}")
-                            pass
                             
-                        await asyncio.sleep(0.5)
-                        
-                        return status, lucro_bruto
+                            if amount is not None and 'ant-typography-danger' in classes_css:
+                                if abs(lucro_bruto) < float(amount) * 0.8:
+                                    continue
 
-                    except Exception as e:
-                        logger.error(f"❌ [{symbol}] Falha inesperada ao tentar ler e decodificar a linha {index + 1}: {e}")
-                        continue
-                        
-                logger.info(f"🔄 [{symbol}] Nenhum resultado compatível na tentativa {tentativa + 1}. Aguardando...")
+                            # --- DEFINIÇÃO DO RESULTADO FINAL ---
+                            if 'ant-typography-success' in classes_css: status = "WIN"
+                            elif 'ant-typography-danger' in classes_css: status = "LOSS"
+                            elif 'ant-typography-secondary' in classes_css: status = "EMPATE"
+                            else: status = "DESCONHECIDO"
+
+                            logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
+                            
+                            # Salva na memória
+                            self.last_trade_times[symbol] = texto_tempo
+
+                            # Volta para a aba Operações de forma segura antes de sair
+                            try:
+                                await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
+                            except: pass
+                                
+                            # RETORNO IMEDIATO: Interrompe tudo pois achou o resultado
+                            return status, lucro_bruto
+
+                        except Exception as e:
+                            logger.error(f"❌ [{symbol}] Falha inesperada ao ler a linha {index + 1}: {e}")
+                            continue
+                            
+                    logger.debug(f"🔄 [{symbol}] Nenhum resultado nesta tentativa. Recarregando...")
+
+                # =======================================================
+                # FIM DO LAÇO DE 6 TENTATIVAS
+                # =======================================================
+                logger.error(f"🛑 [{symbol}] ESGOTADO! O resultado não apareceu no histórico após 6 tentativas cruzando os dados.")
+                await page.screenshot(path=f"logs/erro_historico_{symbol}.png")
+                try:
+                    await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
+                except: pass
                 
-            logger.error(f"🛑 [{symbol}] ESGOTADO! O resultado não apareceu no histórico após 6 tentativas cruzando os dados.")
-            await page.screenshot(path=f"logs/erro_historico_{symbol}.png")
-            try:
-                xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
-                await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
-            except: 
-                pass
-            
-            return "ERRO_LEITURA", 0.0
+                return "ERRO_LEITURA", 0.0
 
         except Exception as e:
             logger.error(f"💥 [{symbol}] ERRO CRÍTICO GLOBAL na função check_trade_result: {e}", exc_info=True)
