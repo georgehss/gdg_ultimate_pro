@@ -36,6 +36,13 @@ class RSIStrategy(BaseStrategy):
             self.ema_period = 9
             self.entry_mode = "CROSSBACK"
             self.confirm_candle = True
+            
+            # FILTROS INSTITUCIONAIS DINÂMICOS
+            self.min_adx = 25               # Tendência forte obrigatória para operar
+            self.volatility_mult = 1.0      # Vela tem que ter 100% ou mais da volatilidade média
+            self.volume_mult = 1.1          # Volume de exaustão tem de ser 10% maior que a vela anterior
+            self.bb_std = 2.5               # Exige que o preço fure Bandas de Bollinger extremamente largas
+
         elif self.profile == "Agressivo":
             self.rsi_period = 9
             self.rsi_overbought = 65
@@ -44,7 +51,14 @@ class RSIStrategy(BaseStrategy):
             self.ema_period = 5
             self.entry_mode = "TOUCH"
             self.confirm_candle = False
-        else: # Balanceado ou Customizado (Valores Padrão)
+            
+            # FILTROS INSTITUCIONAIS DINÂMICOS
+            self.min_adx = 15               # Aceita operar mesmo se o mercado estiver morno
+            self.volatility_mult = 0.4      # Aceita velas pequenas (40% do tamanho da média)
+            self.volume_mult = 0.8          # Aceita entrar mesmo se o volume for 20% menor
+            self.bb_std = 1.8               # Bandas mais estreitas (toca muito mais fácil)
+
+        else: # Balanceado (Padrão Original)
             self.rsi_period = 14
             self.rsi_overbought = 70
             self.rsi_oversold = 30
@@ -52,6 +66,12 @@ class RSIStrategy(BaseStrategy):
             self.ema_period = 9
             self.entry_mode = "CROSSBACK"
             self.confirm_candle = True
+            
+            # FILTROS INSTITUCIONAIS DINÂMICOS
+            self.min_adx = 20               # Padrão
+            self.volatility_mult = 0.7      # Padrão
+            self.volume_mult = 1.0          # Padrão (v1 > v2)
+            self.bb_std = 2.0               # Padrão
 
     async def analyze_market(self):
         # NOVO: Atualizado o log para refletir os novos indicadores
@@ -79,10 +99,10 @@ class RSIStrategy(BaseStrategy):
             df['ema'] = ta.ema(df['closePrice'], length=self.ema_period)
             df['smma_long'] = ta.rma(df['closePrice'], length=self.long_ma_period)
             
-            # NOVO: Bandas de Bollinger (Exaustão Extrema)
-            bbands = ta.bbands(df['closePrice'], length=20, std=2.0)
-            df['bb_lower'] = bbands.iloc[:, 0] # Banda Inferior
-            df['bb_upper'] = bbands.iloc[:, 2] # Banda Superior
+            # NOVO: Bandas de Bollinger Dinâmicas
+            bbands = ta.bbands(df['closePrice'], length=20, std=self.bb_std)
+            df['bb_lower'] = bbands.iloc[:, 0]
+            df['bb_upper'] = bbands.iloc[:, 2]
             
             # NOVO: ADX (Força da Tendência)
             adx_df = ta.adx(df['highPrice'], df['lowPrice'], df['closePrice'], length=14)
@@ -152,7 +172,11 @@ class RSIStrategy(BaseStrategy):
             # 5) Confirmação da Vela e Volatilidade
             candle_ok_buy = (c1 > o1) if self.confirm_candle else True
             candle_ok_sell = (c1 < o1) if self.confirm_candle else True
-            volatility_ok = body1 >= (avg_body1 * 0.7)
+            volatility_ok = body1 >= (avg_body1 * self.volatility_mult) # DINÂMICO
+
+            # Filtros Extras Dinâmicos
+            volume_ok = v1 > (v2 * self.volume_mult) # DINÂMICO
+            trend_strength_ok = adx1 > self.min_adx  # DINÂMICO
 
             # 6) Filtro Institucional (Macrotendência)
             trend_up = ema1 > smma1

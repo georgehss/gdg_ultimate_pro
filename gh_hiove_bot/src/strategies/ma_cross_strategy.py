@@ -27,31 +27,55 @@ class MACrossStrategy(BaseStrategy):
         self.trade_duration = "01:00"
 
     def _apply_profile_settings(self):
-        # Filtros fixos da estratégia
+        # Filtros de Período Básicos
         self.rsi_period = 14
-        self.use_slope = True
-        self.slope_lookback = 3
-        self.use_atr_sep = True
         self.atr_period = 14
+        self.slope_lookback = 3
 
         if self.profile == "Conservador":
             self.fast_period = 14
             self.slow_period = 50
             self.long_ma_period = 200
-            self.atr_sep_mult = 0.20
             self.cooldown_bars = 5
+            
+            # FILTROS INSTITUCIONAIS DINÂMICOS
+            self.use_slope = True           # Exige que a EMA lenta esteja apontada a favor
+            self.use_atr_sep = True         # Exige que as EMAs se afastem de verdade
+            self.atr_sep_mult = 0.20        # Separação grande
+            self.min_adx = 25               # Tendência consolidada
+            self.volume_mult = 1.1          # Volume de cruzamento tem de ser 10% maior que a média
+            self.rsi_max_buy = 55           # Muito rigor: recusa comprar num topo (RSI < 55)
+            self.rsi_min_sell = 45          # Muito rigor: recusa vender num fundo (RSI > 45)
+
         elif self.profile == "Agressivo":
             self.fast_period = 5
             self.slow_period = 13
             self.long_ma_period = 50
-            self.atr_sep_mult = 0.05
             self.cooldown_bars = 1
-        else: # Balanceado ou Customizado
+            
+            # FILTROS INSTITUCIONAIS DINÂMICOS
+            self.use_slope = False          # Ignora a inclinação (tenta apanhar reversões abruptas)
+            self.use_atr_sep = False        # Ignora a separação perfeita (basta tocar)
+            self.atr_sep_mult = 0.05        # (Não será usado se use_atr_sep for False)
+            self.min_adx = 15               # Aceita cruzamentos em mercados menos direcionais
+            self.volume_mult = 0.8          # Aceita entrar mesmo com volume 20% abaixo da média
+            self.rsi_max_buy = 75           # Aceita comprar até à boca da zona de sobrecompra
+            self.rsi_min_sell = 25          # Aceita vender mesmo bem perto da sobrevenda
+
+        else: # Balanceado (Padrão Original)
             self.fast_period = 9
             self.slow_period = 21
             self.long_ma_period = 100
-            self.atr_sep_mult = 0.15
             self.cooldown_bars = 3
+            
+            # FILTROS INSTITUCIONAIS DINÂMICOS
+            self.use_slope = True
+            self.use_atr_sep = True
+            self.atr_sep_mult = 0.15
+            self.min_adx = 20               # Padrão
+            self.volume_mult = 1.0          # Padrão (Volume tem de passar a SMA20)
+            self.rsi_max_buy = 65           # Padrão
+            self.rsi_min_sell = 35          # Padrão
 
     async def analyze_market(self):
         # NOVO: Atualizado o log
@@ -142,11 +166,10 @@ class MACrossStrategy(BaseStrategy):
 
             # --- NOVOS FILTROS INSTITUCIONAIS ---
             
-            # NOVO: Filtro de Ignição (Volume e Ação de Preço)
-            # Confirma que a vela do cruzamento fechou a favor e teve volume acima da média
+            # NOVO: Filtro de Ignição (Volume e Ação de Preço) Dinâmico
             candle_ok_buy = (c1 > o1)
             candle_ok_sell = (c1 < o1)
-            volume_ok = v1 > vol_sma1 # Volume atual maior que a média das últimas 20 velas
+            volume_ok = v1 > (vol_sma1 * self.volume_mult) # DINÂMICO
             
             if cross_up and not (candle_ok_buy and volume_ok):
                 cross_up = False
@@ -156,8 +179,8 @@ class MACrossStrategy(BaseStrategy):
                 cross_down = False
                 logger.debug(f"[{self.name}] SELL bloqueado: Falta de volume de ignição ou vela contrária.")
 
-            # NOVO: Filtro de ADX (Força da Tendência)
-            trend_strength_ok = adx1 > 20
+            # NOVO: Filtro de ADX (Força da Tendência) Dinâmico
+            trend_strength_ok = adx1 > self.min_adx # DINÂMICO
             
             if cross_up and not trend_strength_ok:
                 cross_up = False
@@ -177,9 +200,9 @@ class MACrossStrategy(BaseStrategy):
             if cross_down and not trend_down:
                 cross_down = False
 
-            # Filtro 4: Exaustão (RSI)
-            rsi_ok_buy = rsi1 < 65
-            rsi_ok_sell = rsi1 > 35
+            # Filtro 4: Exaustão (RSI) Dinâmico
+            rsi_ok_buy = rsi1 < self.rsi_max_buy   # DINÂMICO
+            rsi_ok_sell = rsi1 > self.rsi_min_sell # DINÂMICO
             
             if cross_up and not rsi_ok_buy:
                 cross_up = False
