@@ -492,7 +492,9 @@ class TradingTelegramBot:
         elif data.startswith('mgtype_'):
             self.user_config["martingale_type"] = data.split('_')[1]
             if self.user_config["martingale_type"] == "Nenhum":
-                self.setup_step = "take_profit" # Pula o resto do MG
+                self.setup_step = "take_profit"
+            elif self.user_config["martingale_type"] == "Sinal":
+                self.setup_step = "martingale_signal_mode"
             else:
                 self.setup_step = "martingale_steps"
 
