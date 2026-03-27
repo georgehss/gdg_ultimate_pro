@@ -519,36 +519,38 @@ class HioveScraper:
             return 0.0
 
     async def check_trade_result(self, symbol: str, amount: float = None, hora_sinal: str = None) -> tuple[str, float]:
-        """Abre o histórico, varre a lista cruzando Ativo, Tempo e Valor. Inclui logs super detalhados para debug."""
+        """Abre o histórico, varre a lista cruzando Ativo, Tempo e Valor."""
         page = self.pages.get(symbol)
         if not page:
-            logger.error(f"❌ [{symbol}] ERRO: A página do ativo não foi encontrada na memória (self.pages).")
+            logger.error(f"❌ [{symbol}] ERRO: A página do ativo não foi encontrada.")
             return "FALHOU", 0.0
             
         try:
             logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando a corretora processar...")
             
-            # AUMENTO DE TENTATIVAS: Tenta 6 vezes (Dá ~18 segundos para a corretora resolver o delay)
-            for tentativa in range(6):
-                logger.debug(f"🔄 [{symbol}] Iniciando tentativa de leitura {tentativa + 1}/6...")
+            # ADICIONE A TRAVA E O FOCO AQUI!
+            async with self.trade_lock:
+                await page.bring_to_front()
+                await asyncio.sleep(0.5) # Dá um tempo para a aba "acordar"
                 
-                # ==========================================
-                # O SEGREDO DO REFRESH: Alternar as abas!
-                # ==========================================
-                xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
-                xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
-                
-                try:
-                    logger.debug(f"🖱️ [{symbol}] Clicando em 'Operações' para resetar a aba...")
-                    await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
-                    await asyncio.sleep(0.5)
+                # AUMENTO DE TENTATIVAS: Tenta 6 vezes
+                for tentativa in range(6):
+                    logger.debug(f"🔄 [{symbol}] Iniciando tentativa de leitura {tentativa + 1}/6...")
                     
-                    logger.debug(f"🖱️ [{symbol}] Clicando em 'Histórico' para forçar o recarregamento...")
-                    await page.locator(f'xpath={xpath_btn_historico}').click(timeout=3000)
-                except Exception as e:
-                    logger.warning(f"⚠️ [{symbol}] Falha ao alternar abas de refresh: {e}")
-                
-                await asyncio.sleep(2.0) # Espera a lista nova renderizar na tela
+                    xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
+                    xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
+                    
+                    try:
+                        logger.debug(f"🖱️ [{symbol}] Clicando em 'Operações' para resetar a aba...")
+                        await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
+                        await asyncio.sleep(0.5)
+                        
+                        logger.debug(f"🖱️ [{symbol}] Clicando em 'Histórico' para forçar o recarregamento...")
+                        await page.locator(f'xpath={xpath_btn_historico}').click(timeout=3000)
+                    except Exception as e:
+                        logger.warning(f"⚠️ [{symbol}] Falha ao alternar abas de refresh: {e}")
+                    
+                    await asyncio.sleep(2.0)
                 
                 # Coleta todos os itens da lista
                 xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
