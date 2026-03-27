@@ -26,7 +26,8 @@ class TradingTelegramBot:
             "timeframe": "1m",     
             "duration": "01:00",
             "amount": 1.0,
-            "martingale_type": "Nenhum",   
+            "martingale_type": "Nenhum",  
+            "martingale_signal_mode": "Global", 
             "martingale_steps": 0,         
             "martingale_multiplier": 2.0,  
             "take_profit": 50.0,
@@ -98,8 +99,11 @@ class TradingTelegramBot:
                 sl = float(saved_config.get('stop_loss', 0.0))
                 
                 mg_str = "❌ Desativado"
-                if saved_config.get('martingale_type') and saved_config['martingale_type'] != "Nenhum":
-                    mg_str = f"{saved_config['martingale_type']} | {saved_config.get('martingale_steps', 0)} passos | {saved_config.get('martingale_multiplier', 0)}x"
+                if self.user_config.get('martingale_type') and self.user_config['martingale_type'] != "Nenhum":
+                    # Se for Sinal, adiciona a tag (Global) ou (Ativo) ao lado do nome
+                    modo_str = f" ({self.user_config.get('martingale_signal_mode', 'Global')})" if self.user_config['martingale_type'] == "Sinal" else ""
+                    
+                    mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {self.user_config.get('martingale_multiplier', 0)}x"
 
                 text = (
                     f"💾 *Configuração Salva Encontrada*\n\n"
@@ -213,6 +217,14 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("🕯️ Na Próxima Vela", callback_data='mgtype_Vela')],
                 [InlineKeyboardButton("📡 No Próximo Sinal", callback_data='mgtype_Sinal')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_type')] # <--- Adicionado
+            ]
+
+        elif self.setup_step == "martingale_signal_mode":
+            text = "🌐 *Modo do Martingale Sinal*\nComo o bot deve usar os próximos sinais para recuperar o loss?"
+            keyboard = [
+                [InlineKeyboardButton("🌍 Global (Qualquer ativo que der sinal)", callback_data='mgmode_Global')],
+                [InlineKeyboardButton("🎯 Ativo (Apenas no mesmo ativo do loss)", callback_data='mgmode_Ativo')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_signal_mode')]
             ]
 
         elif self.setup_step == "martingale_steps":
@@ -387,15 +399,21 @@ class TradingTelegramBot:
                 else:
                     self.setup_step = 'profile'
             elif step == 'duration':
-                self.setup_step = 'timeframe' # <--- MUDE DE 'assets' PARA 'timeframe'
-            elif step == 'timeframe':         # <--- ADICIONE ESTA LINHA
+                self.setup_step = 'timeframe'
+            elif step == 'timeframe':
                 self.setup_step = 'assets'
             elif step == 'amount':
                 self.setup_step = 'duration'
             elif step == 'martingale_type':
                 self.setup_step = 'amount'
-            elif step == 'martingale_steps':
+            elif step == 'martingale_signal_mode':
                 self.setup_step = 'martingale_type'
+            elif step == 'martingale_steps':
+                # Se for "Sinal", volta para a escolha de modo. Se for "Vela", volta para o tipo.
+                if self.user_config.get("martingale_type") == "Sinal":
+                    self.setup_step = 'martingale_signal_mode'
+                else:
+                    self.setup_step = 'martingale_type'
             elif step == 'martingale_multiplier':
                 self.setup_step = 'martingale_steps'
             elif step == 'take_profit':
@@ -478,6 +496,11 @@ class TradingTelegramBot:
             else:
                 self.setup_step = "martingale_steps"
 
+        # Passo 6.5: Martingale Signal Mode
+        elif data.startswith('mgmode_'):
+            self.user_config["martingale_signal_mode"] = data.split('_')[1]
+            self.setup_step = "martingale_steps"
+
         # Passo 7: Martingale Steps
         elif data.startswith('mgstep_'):
             self.user_config["martingale_steps"] = int(data.split('_')[1])
@@ -533,7 +556,10 @@ class TradingTelegramBot:
         # Formata a string do Martingale
         mg_str = "❌ Desativado"
         if self.user_config.get('martingale_type') and self.user_config['martingale_type'] != "Nenhum":
-            mg_str = f"{self.user_config['martingale_type']} | {self.user_config['martingale_steps']} passos | {self.user_config['martingale_multiplier']}x"
+            # Se for Sinal, adiciona a tag (Global) ou (Ativo) ao lado do nome
+            modo_str = f" ({self.user_config.get('martingale_signal_mode', 'Global')})" if self.user_config['martingale_type'] == "Sinal" else ""
+            
+            mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {self.user_config.get('martingale_multiplier', 0)}x"
 
         # Formata a lista de estratégias ativas
         if self.manager and self.manager.strategies:
@@ -629,9 +655,12 @@ class TradingTelegramBot:
 
     async def _show_final_summary(self, query):
         """Mostra o resumo e dispara a inicialização do robô"""
-        mg_str = f"❌ Desativado"
-        if self.user_config['martingale_type'] != "Nenhum":
-            mg_str = f"{self.user_config['martingale_type']} | {self.user_config['martingale_steps']} passos | {self.user_config['martingale_multiplier']}x"
+        mg_str = "❌ Desativado"
+        if self.user_config.get('martingale_type') and self.user_config['martingale_type'] != "Nenhum":
+            # Se for Sinal, adiciona a tag (Global) ou (Ativo) ao lado do nome
+            modo_str = f" ({self.user_config.get('martingale_signal_mode', 'Global')})" if self.user_config['martingale_type'] == "Sinal" else ""
+            
+            mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {self.user_config.get('martingale_multiplier', 0)}x"
 
         resumo = (
             f"🚀 *SISTEMA INICIANDO!*\n\n"
