@@ -14,3 +14,6 @@ HIOVE_PASSWORD = os.getenv("HIOVE_PASSWORD")
 
 # Token de Segurança do Webhook
 WEBHOOK_TOKEN = os.getenv("WEBHOOK_TOKEN")
+
+# Configuração do Scraper
+HEADLESS_MODE = os.getenv("HEADLESS_MODE", "True").lower() == "true"

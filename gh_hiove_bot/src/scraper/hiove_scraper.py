@@ -2,6 +2,9 @@ import asyncio, logging, re
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
+# Importa a variável que acabamos de criar
+from core.config import HEADLESS_MODE
+
 logger = logging.getLogger(__name__)
 
 class HioveScraper:
@@ -25,22 +28,36 @@ class HioveScraper:
         logger.info("Iniciando o navegador do robô...")
         self.playwright = await async_playwright().start()
         
-        # 1. Define headless para True (ou use uma variável de configuração)
+        # 1. Prepara os argumentos básicos
+        browser_args = [
+            '--disable-background-timer-throttling', 
+            '--disable-backgrounding-occluded-windows', 
+            '--disable-renderer-backgrounding',
+            '--disable-blink-features=AutomationControlled' # Ajuda a esconder que é um robô
+        ]
+        
+        # Se for rodar com a tela aparecendo, adiciona a flag para maximizar no Windows
+        if not HEADLESS_MODE:
+            browser_args.append('--start-maximized')
+            
         self.browser = await self.playwright.chromium.launch(
-            headless=False, 
-            args=[
-                '--disable-background-timer-throttling', 
-                '--disable-backgrounding-occluded-windows', 
-                '--disable-renderer-backgrounding',
-                '--disable-blink-features=AutomationControlled' # Ajuda a esconder que é um robô
-            ]
+            headless=HEADLESS_MODE, 
+            args=browser_args
         )
         
-        # 2. Força um User-Agent real e uma resolução de monitor (Viewport)
-        self.context = await self.browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-        )
+        # 2. Configura a resolução (Viewport) de forma dinâmica
+        if not HEADLESS_MODE:
+            # MODO VISUAL: Desativa o viewport fixo para a página se esticar livremente na tela maximizada
+            self.context = await self.browser.new_context(
+                no_viewport=True,
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            )
+        else:
+            # MODO INVISÍVEL (Headless): Força a resolução 1920x1080 cravada para não errar os cliques
+            self.context = await self.browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            )
         
         self.main_page = await self.context.new_page()
         
