@@ -155,10 +155,10 @@ class HioveBrokerAPI:
             
             if agora.second <= 30:
                 # Pertence ao minuto atual. Subtrai 1 minuto pois o minuto atual já está a correr
-                segundos_espera = (60 - agora.second) + ((minutos_ativo - 1) * 60) + 5
+                segundos_espera = (60 - agora.second) + ((minutos_ativo - 1) * 60) + 1
             else:
                 # Empurrado para o minuto seguinte. Tempo restante deste minuto + tempo total do ativo
-                segundos_espera = (60 - agora.second) + (minutos_ativo * 60) + 5
+                segundos_espera = (60 - agora.second) + (minutos_ativo * 60) + 1
                 
             logger.info(f"⏳ [{symbol}] O robô dormirá por {segundos_espera}s para sincronizar com a corretora...")
             
