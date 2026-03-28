@@ -172,8 +172,8 @@ class HioveScraper:
                 if not self.pages: continue
 
                 agora = datetime.now()
-                if agora.second > 45 or agora.second < 10:
-                    await asyncio.sleep(15)
+                if agora.second > 50 or agora.second < 20:
+                    await asyncio.sleep(10)
                     continue
 
                 logger.debug("🔄 Verificando saúde das abas (Monitor de Relógio e Sessão)...")
