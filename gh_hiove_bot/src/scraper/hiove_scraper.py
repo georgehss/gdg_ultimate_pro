@@ -13,14 +13,15 @@ class HioveScraper:
         self.password = password
         self.is_demo = is_demo
         self.browser = None
-        self.context = None
+        self.main_context = None
         self.main_page = None # Usado para login e será reaproveitado
         self.playwright = None
+        self.contexts = {} # Dicionário para guardar a JANELA exclusiva de cada ativo
         self.pages = {} # Dicionário para guardar a aba exclusiva de cada ativo
         self.asset_configs = {} # Guarda a configuração de tempo/valor de cada ativo
-        self.trade_lock = asyncio.Lock() # Trava para criar uma fila de espera de cliques simultâneos
         self.last_trade_times = {} # Memória para não ler o mesmo horário de operação duas vezes
         self.keep_alive_task = None # Guarda a tarefa anti-inatividade
+        self.context_args = {} # Guardará as configurações de resolução
 
 
     async def start(self):
@@ -28,15 +29,13 @@ class HioveScraper:
         logger.info("Iniciando o navegador do robô...")
         self.playwright = await async_playwright().start()
         
-        # 1. Prepara os argumentos básicos
         browser_args = [
             '--disable-background-timer-throttling', 
             '--disable-backgrounding-occluded-windows', 
             '--disable-renderer-backgrounding',
-            '--disable-blink-features=AutomationControlled' # Ajuda a esconder que é um robô
+            '--disable-blink-features=AutomationControlled'
         ]
         
-        # Se for rodar com a tela aparecendo, adiciona a flag para maximizar no Windows
         if not HEADLESS_MODE:
             browser_args.append('--start-maximized')
             
@@ -45,21 +44,18 @@ class HioveScraper:
             args=browser_args
         )
         
-        # 2. Configura a resolução (Viewport) de forma dinâmica
+        # Guardamos os argumentos para usar nas novas janelas depois
+        self.context_args = {
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        }
         if not HEADLESS_MODE:
-            # MODO VISUAL: Desativa o viewport fixo para a página se esticar livremente na tela maximizada
-            self.context = await self.browser.new_context(
-                no_viewport=True,
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-            )
+            self.context_args['no_viewport'] = True
         else:
-            # MODO INVISÍVEL (Headless): Força a resolução 1920x1080 cravada para não errar os cliques
-            self.context = await self.browser.new_context(
-                viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-            )
-        
-        self.main_page = await self.context.new_page()
+            self.context_args['viewport'] = {'width': 1920, 'height': 1080}
+            
+        # Cria a janela principal para Login
+        self.main_context = await self.browser.new_context(**self.context_args)
+        self.main_page = await self.main_context.new_page()
         
         try:
             logger.info("Acessando a página da Hiove...")
@@ -177,57 +173,47 @@ class HioveScraper:
                     continue
 
                 logger.debug("🔄 Verificando saúde das abas (Monitor de Relógio e Sessão)...")
-
-                async with self.trade_lock:
-                    for symbol, page in self.pages.items():
-                        try:
-                            await page.bring_to_front()
-                            await asyncio.sleep(1.0) 
-
-                            # ==========================================
-                            # 1. VERIFICAÇÃO DE SESSÃO (DESLOGADO)
-                            # ==========================================
-                            is_logged_out = False
-                            if "auth/login" in page.url:
-                                is_logged_out = True
-                            else:
-                                try:
-                                    if await page.locator('#email').is_visible(timeout=500):
-                                        is_logged_out = True
-                                except: pass
-
-                            if is_logged_out:
-                                logger.warning(f"⚠️ [{symbol}] ABA DESLOGADA DETECTADA! Iniciando recuperação da sessão...")
-                                await self._relogin_and_reconfigure(symbol, page)
-                                continue # Pula a verificação do relógio pois a aba já foi recarregada
-                            
-                            # ==========================================
-                            # 2. VERIFICAÇÃO DE CONGELAMENTO DO RELÓGIO
-                            # ==========================================
-                            xpath_relogio = '//*[@id="root"]/div[2]/div/footer/footer/div[2]/span[2]'
-                            relogio_element = page.locator(f'xpath={xpath_relogio}')
-
-                            if await relogio_element.is_visible():
-                                relogio_1 = await relogio_element.inner_text()
-                                await asyncio.sleep(2.0)
-                                relogio_2 = await relogio_element.inner_text()
-
-                                if relogio_1 == relogio_2 and ":" in relogio_1:
-                                    logger.warning(f"⚠️ [{symbol}] TELA CONGELADA! Relógio travado em '{relogio_1}'. A página perdeu conexão.")
-                                    logger.info(f"🔄 [{symbol}] Forçando recarregamento (F5) para restabelecer o ativo...")
-                                    
-                                    await page.reload(timeout=30000)
-                                    await page.wait_for_load_state('networkidle', timeout=15000)
-                                    await asyncio.sleep(3)
-                                    logger.info(f"✅ [{symbol}] Página recarregada com sucesso e pronta para operar!")
-
-                        except Exception as e:
-                            logger.debug(f"Aviso no Monitor de Congelamento da aba {symbol}: {e}")
-
+                for symbol, page in self.pages.items():
                     try:
-                        primeira_pagina = list(self.pages.values())[0]
-                        await primeira_pagina.bring_to_front()
-                    except: pass
+                        # ==========================================
+                        # 1. VERIFICAÇÃO DE SESSÃO (DESLOGADO)
+                        # ==========================================
+                        is_logged_out = False
+                        if "auth/login" in page.url:
+                            is_logged_out = True
+                        else:
+                            try:
+                                if await page.locator('#email').is_visible(timeout=500):
+                                    is_logged_out = True
+                            except: pass
+
+                        if is_logged_out:
+                            logger.warning(f"⚠️ [{symbol}] ABA DESLOGADA DETECTADA! Iniciando recuperação da sessão...")
+                            await self._relogin_and_reconfigure(symbol, page)
+                            continue # Pula a verificação do relógio pois a aba já foi recarregada
+                        
+                        # ==========================================
+                        # 2. VERIFICAÇÃO DE CONGELAMENTO DO RELÓGIO
+                        # ==========================================
+                        xpath_relogio = '//*[@id="root"]/div[2]/div/footer/footer/div[2]/span[2]'
+                        relogio_element = page.locator(f'xpath={xpath_relogio}')
+
+                        if await relogio_element.is_visible():
+                            relogio_1 = await relogio_element.inner_text()
+                            await asyncio.sleep(2.0)
+                            relogio_2 = await relogio_element.inner_text()
+
+                            if relogio_1 == relogio_2 and ":" in relogio_1:
+                                logger.warning(f"⚠️ [{symbol}] TELA CONGELADA! Relógio travado em '{relogio_1}'. A página perdeu conexão.")
+                                logger.info(f"🔄 [{symbol}] Forçando recarregamento (F5) para restabelecer o ativo...")
+                                
+                                await page.reload(timeout=30000)
+                                await page.wait_for_load_state('networkidle', timeout=15000)
+                                await asyncio.sleep(3)
+                                logger.info(f"✅ [{symbol}] Página recarregada com sucesso e pronta para operar!")
+
+                    except Exception as e:
+                        logger.debug(f"Aviso no Monitor de Congelamento da aba {symbol}: {e}")
 
             except asyncio.CancelledError:
                 logger.info("⏹️ Monitor de Tela encerrado com sucesso.")
@@ -278,9 +264,8 @@ class HioveScraper:
 
     async def setup_asset_page(self, symbol: str, amount: float, close_time: str, asset_type: str = "Crypto"):
         """Acessa a plataforma e deixa o ativo e os DADOS já 100% preenchidos"""
-        logger.info(f"Configurando aba para o ativo {symbol}...")
+        logger.info(f"Configurando JANELA ISOLADA para o ativo {symbol}...")
 
-        # NOVO: Salva a configuração para caso a aba caia e precise ser recuperada
         self.asset_configs[symbol] = {
             "amount": amount,
             "close_time": close_time,
@@ -288,14 +273,19 @@ class HioveScraper:
         }
         
         try:
-            if not self.pages: 
-                logger.info(f"Reaproveitando a aba de login para o ativo {symbol}...")
-                page = self.main_page
-            else:
-                logger.info(f"Criando nova aba para o ativo {symbol}...")
-                page = await self.context.new_page()
-                await page.goto(self.main_page.url, wait_until='domcontentloaded', timeout=60000)
-                await asyncio.sleep(5) 
+            # 1. Copia os cookies e o login da janela principal
+            state = await self.main_context.storage_state()
+            
+            # 2. Cria uma JANELA separada e já logada
+            new_context = await self.browser.new_context(storage_state=state, **self.context_args)
+            page = await new_context.new_page()
+            
+            # 3. Salva na memória
+            self.contexts[symbol] = new_context
+            self.pages[symbol] = page
+            
+            await page.goto(self.main_page.url, wait_until='domcontentloaded', timeout=60000)
+            await asyncio.sleep(5)
             
             logger.info(f"Pesquisando e selecionando {symbol}...")
             await page.locator('//*[@id="header"]/div/div[1]/div[1]/button/i').click(timeout=10000)
@@ -378,121 +368,121 @@ class HioveScraper:
             logger.error(f"Página para {symbol} não encontrada!")
             return {"id": f"real_scraper_order_{symbol}", "payout": payout_str}
             
-        async with self.trade_lock:
-            try:
-                await page.bring_to_front()
+        try:
+            # ==========================================
+            # INJEÇÃO MARTINGALE: Atualizar valor antes de atirar
+            # ==========================================
+            if amount is not None:
+                xpath_valor = '//*[@id="sider-trade"]/div/div/form/div[2]/div[2]/div/div/div/div/div/div/input'
+                locator_valor = page.locator(f'xpath={xpath_valor}')
+                await locator_valor.click()
+                
+                # 1. Limpeza nativa via teclado (resolve o bloqueio do Ant Design)
+                await page.keyboard.press("Control+A") 
+                await page.keyboard.press("Backspace")
                 await asyncio.sleep(0.1)
                 
-                # ==========================================
-                # INJEÇÃO MARTINGALE: Atualizar valor antes de atirar
-                # ==========================================
-                if amount is not None:
-                    xpath_valor = '//*[@id="sider-trade"]/div/div/form/div[2]/div[2]/div/div/div/div/div/div/input'
-                    locator_valor = page.locator(f'xpath={xpath_valor}')
-                    await locator_valor.click()
+                # 2. Verifica se o número tem casas decimais necessárias (ex: $5.0 vira "5", mas $12.5 vira "12.5")
+                # Para evitar passar o "5.0" que causa conflito.
+                if amount.is_integer():
+                    str_amount = str(int(amount))
+                else:
+                    str_amount = str(round(amount, 2)).replace('.', ',') # Troca ponto por vírgula
                     
-                    # 1. Limpeza nativa via teclado (resolve o bloqueio do Ant Design)
-                    await page.keyboard.press("Control+A") 
-                    await page.keyboard.press("Backspace")
-                    await asyncio.sleep(0.1)
-                    
-                    # 2. Verifica se o número tem casas decimais necessárias (ex: $5.0 vira "5", mas $12.5 vira "12.5")
-                    # Para evitar passar o "5.0" que causa conflito.
-                    if amount.is_integer():
-                        str_amount = str(int(amount))
-                    else:
-                        str_amount = str(round(amount, 2)).replace('.', ',') # Troca ponto por vírgula
-                        
-                    await locator_valor.type(str_amount, delay=100) 
-                    await page.keyboard.press("Enter")
-                    await asyncio.sleep(0.2)
+                await locator_valor.type(str_amount, delay=100) 
+                await page.keyboard.press("Enter")
+                await asyncio.sleep(0.2)
 
-                # ==========================================
-                # LER O PAYOUT ATUAL DA CORRETORA
-                # ==========================================
-                payout_str = "N/A"
-                try:
-                    # Usa uma busca focada no símbolo de percentagem dentro do painel lateral
-                    xpath_payout = '//*[@id="sider-trade"]//span[contains(text(), "%")]'
-                    payout_locator = page.locator(f'xpath={xpath_payout}').first
-                    
-                    # Aumentamos o timeout para garantir que dá tempo do site carregar a %
-                    if await payout_locator.is_visible(timeout=2500):
-                        payout_str = await payout_locator.inner_text()
-                except Exception as e:
-                    logger.debug(f"Aviso: Não foi possível ler o payout: {e}")
+            # ==========================================
+            # LER O PAYOUT ATUAL DA CORRETORA
+            # ==========================================
+            payout_str = "N/A"
+            try:
+                # Usa uma busca focada no símbolo de percentagem dentro do painel lateral
+                xpath_payout = '//*[@id="sider-trade"]//span[contains(text(), "%")]'
+                payout_locator = page.locator(f'xpath={xpath_payout}').first
                 
-                # ==========================================
-                # SINCRONIZAÇÃO COM O RELÓGIO DA CORRETORA
-                # ==========================================
-                try:
-                    xpath_relogio = '//*[@id="root"]/div[2]/div/footer/footer/div[2]/span[2]'
-                    relogio_element = page.locator(f'xpath={xpath_relogio}')
-                    
-                    for _ in range(15): # Tenta ler rapidamente por até 3 segundos
-                        texto_relogio = await relogio_element.inner_text(timeout=1000)
-                        
-                        # Extrai os segundos do texto da corretora (ex: 04:06:59 -> 59)
-                        match = re.search(r'(\d{2}):(\d{2}):(\d{2})', texto_relogio)
-                        if match:
-                            segundos = int(match.group(3))
-                            
-                            if segundos == 59:
-                                logger.info(f"⏳ [{symbol}] Relógio da corretora em 59s. Segurando o gatilho para a virada...")
-                                await asyncio.sleep(0.9) # Espera a vela abrir
-                                break
-                            elif segundos <= 2:
-                                # Já está na abertura perfeita (segundo 00, 01, ou 02)
-                                break
-                            elif segundos > 55:
-                                # Faltam poucos segundos, aguarda o tempo exato
-                                espera = 60 - segundos
-                                logger.info(f"⏳ [{symbol}] Ajuste fino: Aguardando {espera}s para a abertura...")
-                                await asyncio.sleep(espera)
-                                break
-                            else:
-                                # O sinal chegou muito atrasado. Interrompe a trava para não congelar o robô.
-                                break
-                                
-                        await asyncio.sleep(0.2)
-                except Exception as e:
-                    logger.debug(f"Aviso na sincronização do relógio: {e}")
-                # ==========================================
-
-                logger.info(f"⚡ [{symbol}] SINAL SINCRONIZADO! Disparando ordem de {direction.upper()}...")
-                
-                if direction.upper() == "BUY":
-                    btn_comprar = page.locator('#sider-trade button:has-text("Comprar")')
-                    await btn_comprar.wait_for(state="visible", timeout=3000)
-                    await btn_comprar.click()
-                    logger.info(f"✅ [{symbol}] Ordem de COMPRA executada na abertura da vela!")
-                elif direction.upper() == "SELL":
-                    btn_vender = page.locator('#sider-trade button:has-text("Vender")')
-                    await btn_vender.wait_for(state="visible", timeout=3000)
-                    await btn_vender.click()
-                    logger.info(f"✅ [{symbol}] Ordem de VENDA executada na abertura da vela!")
-
-                return {"id": f"real_scraper_order_{symbol}"}
-
-            except PlaywrightTimeoutError:
-                logger.error(f"❌ [{symbol}] Os botões de ordem sumiram da tela. A tirar print do ecrã...")
-                await page.screenshot(path=f"logs/erro_timeout_{symbol}.png")
+                # Aumentamos o timeout para garantir que dá tempo do site carregar a %
+                if await payout_locator.is_visible(timeout=2500):
+                    payout_str = await payout_locator.inner_text()
             except Exception as e:
-                logger.error(f"❌ [{symbol}] Erro inesperado ao clicar: {e}")
-                await page.screenshot(path=f"logs/erro_inesperado_{symbol}.png")
-                return None
+                logger.debug(f"Aviso: Não foi possível ler o payout: {e}")
+            
+            # ==========================================
+            # SINCRONIZAÇÃO COM O RELÓGIO DA CORRETORA
+            # ==========================================
+            try:
+                xpath_relogio = '//*[@id="root"]/div[2]/div/footer/footer/div[2]/span[2]'
+                relogio_element = page.locator(f'xpath={xpath_relogio}')
+                
+                for _ in range(15): # Tenta ler rapidamente por até 3 segundos
+                    texto_relogio = await relogio_element.inner_text(timeout=1000)
+                    
+                    # Extrai os segundos do texto da corretora (ex: 04:06:59 -> 59)
+                    match = re.search(r'(\d{2}):(\d{2}):(\d{2})', texto_relogio)
+                    if match:
+                        segundos = int(match.group(3))
+                        
+                        if segundos == 59:
+                            logger.info(f"⏳ [{symbol}] Relógio da corretora em 59s. Segurando o gatilho para a virada...")
+                            await asyncio.sleep(0.9) # Espera a vela abrir
+                            break
+                        elif segundos <= 2:
+                            # Já está na abertura perfeita (segundo 00, 01, ou 02)
+                            break
+                        elif segundos > 55:
+                            # Faltam poucos segundos, aguarda o tempo exato
+                            espera = 60 - segundos
+                            logger.info(f"⏳ [{symbol}] Ajuste fino: Aguardando {espera}s para a abertura...")
+                            await asyncio.sleep(espera)
+                            break
+                        else:
+                            # O sinal chegou muito atrasado. Interrompe a trava para não congelar o robô.
+                            break
+                            
+                    await asyncio.sleep(0.2)
+            except Exception as e:
+                logger.debug(f"Aviso na sincronização do relógio: {e}")
+            # ==========================================
+
+            logger.info(f"⚡ [{symbol}] SINAL SINCRONIZADO! Disparando ordem de {direction.upper()}...")
+            
+            if direction.upper() == "BUY":
+                btn_comprar = page.locator('#sider-trade button:has-text("Comprar")')
+                await btn_comprar.wait_for(state="visible", timeout=3000)
+                await btn_comprar.click()
+                logger.info(f"✅ [{symbol}] Ordem de COMPRA executada na abertura da vela!")
+            elif direction.upper() == "SELL":
+                btn_vender = page.locator('#sider-trade button:has-text("Vender")')
+                await btn_vender.wait_for(state="visible", timeout=3000)
+                await btn_vender.click()
+                logger.info(f"✅ [{symbol}] Ordem de VENDA executada na abertura da vela!")
+
+            return {"id": f"real_scraper_order_{symbol}"}
+
+        except PlaywrightTimeoutError:
+            logger.error(f"❌ [{symbol}] Os botões de ordem sumiram da tela. A tirar print do ecrã...")
+            await page.screenshot(path=f"logs/erro_timeout_{symbol}.png")
+        except Exception as e:
+            logger.error(f"❌ [{symbol}] Erro inesperado ao clicar: {e}")
+            await page.screenshot(path=f"logs/erro_inesperado_{symbol}.png")
+            return None
             
     async def close_asset_tabs(self):
-        """Fecha todas as abas de ativos, atendendo ao requisito de encerrar operações visuais"""
-        logger.info("Fechando todas as abas exclusivas dos ativos...")
+        """Fecha todas as janelas exclusivas de ativos"""
+        logger.info("Fechando todas as janelas exclusivas dos ativos...")
         for symbol, page in self.pages.items():
             try:
                 await page.close()
-                logger.info(f"Aba do ativo {symbol} fechada com sucesso.")
-            except Exception as e:
-                logger.warning(f"Aviso ao tentar fechar a aba de {symbol}: {e}")
+            except: pass
+            
+        for symbol, context in self.contexts.items():
+            try:
+                await context.close()
+            except: pass
         
         self.pages.clear()
+        self.contexts.clear()
         self.last_trade_times.clear()
 
     async def close(self):
@@ -544,127 +534,122 @@ class HioveScraper:
             
         try:
             logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando a corretora processar...")
-            
-            # ADICIONE A TRAVA E O FOCO AQUI!
-            async with self.trade_lock:
-                await page.bring_to_front()
-                await asyncio.sleep(0.5) # Dá um tempo para a aba "acordar"
+              
+            # AUMENTO DE TENTATIVAS: Tenta 6 vezes
+            for tentativa in range(6):
+                logger.debug(f"🔄 [{symbol}] Iniciando tentativa de leitura {tentativa + 1}/6...")
                 
-                # AUMENTO DE TENTATIVAS: Tenta 6 vezes
-                for tentativa in range(6):
-                    logger.debug(f"🔄 [{symbol}] Iniciando tentativa de leitura {tentativa + 1}/6...")
-                    
-                    xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
-                    xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
-                    
-                    try:
-                        logger.debug(f"🖱️ [{symbol}] Clicando em 'Operações' para resetar a aba...")
-                        await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
-                        await asyncio.sleep(0.5)
-                        
-                        logger.debug(f"🖱️ [{symbol}] Clicando em 'Histórico' para forçar o recarregamento...")
-                        await page.locator(f'xpath={xpath_btn_historico}').click(timeout=3000)
-                    except Exception as e:
-                        logger.warning(f"⚠️ [{symbol}] Falha ao alternar abas de refresh: {e}")
-                    
-                    # Espera 1.5s para a aba carregar os itens novos
-                    await asyncio.sleep(1.5)
+                xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
+                xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
                 
-                    # =======================================================
-                    # AGORA ESTÁ DENTRO DO LOOP! Ele confere a cada tentativa
-                    # =======================================================
-                    xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
-                    itens = await page.locator(f'xpath={xpath_itens}').all()
-                    
-                    logger.debug(f"📋 [{symbol}] Foram encontradas {len(itens)} operações na lista. Lendo as 3 primeiras...")
-                    
-                    if not itens:
-                        logger.debug(f"⚠️ [{symbol}] A lista de histórico está vazia nesta tentativa.")
-                        continue # Volta para o topo do FOR e tenta o próximo clique
-                    
-                    for index, item in enumerate(itens[:3]):
-                        try:
-                            logger.debug(f"🔍 [{symbol}] Analisando linha {index + 1}...")
-                            
-                            # --- A. VERIFICA O ATIVO ---
-                            elemento_titulo = item.locator('h4.ant-list-item-meta-title')
-                            if not await elemento_titulo.is_visible(): continue
-                                
-                            texto_ativo = await elemento_titulo.inner_text()
-                            if texto_ativo != symbol: continue
-                                
-                            # --- B. VERIFICA O TEMPO E A MEMÓRIA ---
-                            elemento_tempo = item.locator('.ant-list-item-meta-description span').first
-                            texto_tempo = await elemento_tempo.inner_text() 
-                            
-                            if self.last_trade_times.get(symbol) == texto_tempo:
-                                logger.debug(f"⏭️ [{symbol}] Linha ignorada: Tempo '{texto_tempo}' já está na memória.")
-                                continue 
-
-                            # --- C. VERIFICA A REGRA DOS 30 SEGUNDOS ---
-                            if hora_sinal:
-                                try:
-                                    from datetime import datetime, timedelta
-                                    hora_obj = datetime.strptime(hora_sinal, "%H:%M:%S")
-                                    if hora_obj.second <= 30:
-                                        minuto_esperado = hora_obj.strftime("%H:%M")
-                                    else:
-                                        minuto_esperado = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
-                                    
-                                    if minuto_esperado not in texto_tempo:
-                                        continue
-                                except Exception as e:
-                                    logger.error(f"❌ [{symbol}] Erro na regra de tempo: {e}")
-                                
-                            # --- D. VERIFICA O VALOR E RESULTADO ---
-                            elemento_valor = item.locator('h5')
-                            texto_valor = await elemento_valor.inner_text() 
-                            classes_css = await elemento_valor.get_attribute('class')
-                            
-                            try:
-                                lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
-                            except ValueError:
-                                continue
-                            
-                            if amount is not None and 'ant-typography-danger' in classes_css:
-                                if abs(lucro_bruto) < float(amount) * 0.8:
-                                    continue
-
-                            # --- DEFINIÇÃO DO RESULTADO FINAL ---
-                            if 'ant-typography-success' in classes_css: status = "WIN"
-                            elif 'ant-typography-danger' in classes_css: status = "LOSS"
-                            elif 'ant-typography-secondary' in classes_css: status = "EMPATE"
-                            else: status = "DESCONHECIDO"
-
-                            logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
-                            
-                            # Salva na memória
-                            self.last_trade_times[symbol] = texto_tempo
-
-                            # Volta para a aba Operações de forma segura antes de sair
-                            try:
-                                await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
-                            except: pass
-                                
-                            # RETORNO IMEDIATO: Interrompe tudo pois achou o resultado
-                            return status, lucro_bruto
-
-                        except Exception as e:
-                            logger.error(f"❌ [{symbol}] Falha inesperada ao ler a linha {index + 1}: {e}")
-                            continue
-                            
-                    logger.debug(f"🔄 [{symbol}] Nenhum resultado nesta tentativa. Recarregando...")
-
-                # =======================================================
-                # FIM DO LAÇO DE 6 TENTATIVAS
-                # =======================================================
-                logger.error(f"🛑 [{symbol}] ESGOTADO! O resultado não apareceu no histórico após 6 tentativas cruzando os dados.")
-                await page.screenshot(path=f"logs/erro_historico_{symbol}.png")
                 try:
+                    logger.debug(f"🖱️ [{symbol}] Clicando em 'Operações' para resetar a aba...")
                     await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
-                except: pass
+                    await asyncio.sleep(0.5)
+                    
+                    logger.debug(f"🖱️ [{symbol}] Clicando em 'Histórico' para forçar o recarregamento...")
+                    await page.locator(f'xpath={xpath_btn_historico}').click(timeout=3000)
+                except Exception as e:
+                    logger.warning(f"⚠️ [{symbol}] Falha ao alternar abas de refresh: {e}")
                 
-                return "ERRO_LEITURA", 0.0
+                # Espera 1.5s para a aba carregar os itens novos
+                await asyncio.sleep(1.5)
+            
+                # =======================================================
+                # AGORA ESTÁ DENTRO DO LOOP! Ele confere a cada tentativa
+                # =======================================================
+                xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
+                itens = await page.locator(f'xpath={xpath_itens}').all()
+                
+                logger.debug(f"📋 [{symbol}] Foram encontradas {len(itens)} operações na lista. Lendo as 3 primeiras...")
+                
+                if not itens:
+                    logger.debug(f"⚠️ [{symbol}] A lista de histórico está vazia nesta tentativa.")
+                    continue # Volta para o topo do FOR e tenta o próximo clique
+                
+                for index, item in enumerate(itens[:3]):
+                    try:
+                        logger.debug(f"🔍 [{symbol}] Analisando linha {index + 1}...")
+                        
+                        # --- A. VERIFICA O ATIVO ---
+                        elemento_titulo = item.locator('h4.ant-list-item-meta-title')
+                        if not await elemento_titulo.is_visible(): continue
+                            
+                        texto_ativo = await elemento_titulo.inner_text()
+                        if texto_ativo != symbol: continue
+                            
+                        # --- B. VERIFICA O TEMPO E A MEMÓRIA ---
+                        elemento_tempo = item.locator('.ant-list-item-meta-description span').first
+                        texto_tempo = await elemento_tempo.inner_text() 
+                        
+                        if self.last_trade_times.get(symbol) == texto_tempo:
+                            logger.debug(f"⏭️ [{symbol}] Linha ignorada: Tempo '{texto_tempo}' já está na memória.")
+                            continue 
+
+                        # --- C. VERIFICA A REGRA DOS 30 SEGUNDOS ---
+                        if hora_sinal:
+                            try:
+                                from datetime import datetime, timedelta
+                                hora_obj = datetime.strptime(hora_sinal, "%H:%M:%S")
+                                if hora_obj.second <= 30:
+                                    minuto_esperado = hora_obj.strftime("%H:%M")
+                                else:
+                                    minuto_esperado = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
+                                
+                                if minuto_esperado not in texto_tempo:
+                                    continue
+                            except Exception as e:
+                                logger.error(f"❌ [{symbol}] Erro na regra de tempo: {e}")
+                            
+                        # --- D. VERIFICA O VALOR E RESULTADO ---
+                        elemento_valor = item.locator('h5')
+                        texto_valor = await elemento_valor.inner_text() 
+                        classes_css = await elemento_valor.get_attribute('class')
+                        
+                        try:
+                            lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
+                        except ValueError:
+                            continue
+                        
+                        if amount is not None and 'ant-typography-danger' in classes_css:
+                            if abs(lucro_bruto) < float(amount) * 0.8:
+                                continue
+
+                        # --- DEFINIÇÃO DO RESULTADO FINAL ---
+                        if 'ant-typography-success' in classes_css: status = "WIN"
+                        elif 'ant-typography-danger' in classes_css: status = "LOSS"
+                        elif 'ant-typography-secondary' in classes_css: status = "EMPATE"
+                        else: status = "DESCONHECIDO"
+
+                        logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
+                        
+                        # Salva na memória
+                        self.last_trade_times[symbol] = texto_tempo
+
+                        # Volta para a aba Operações de forma segura antes de sair
+                        try:
+                            await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
+                        except: pass
+                            
+                        # RETORNO IMEDIATO: Interrompe tudo pois achou o resultado
+                        return status, lucro_bruto
+
+                    except Exception as e:
+                        logger.error(f"❌ [{symbol}] Falha inesperada ao ler a linha {index + 1}: {e}")
+                        continue
+                        
+                logger.debug(f"🔄 [{symbol}] Nenhum resultado nesta tentativa. Recarregando...")
+
+            # =======================================================
+            # FIM DO LAÇO DE 6 TENTATIVAS
+            # =======================================================
+            logger.error(f"🛑 [{symbol}] ESGOTADO! O resultado não apareceu no histórico após 6 tentativas cruzando os dados.")
+            await page.screenshot(path=f"logs/erro_historico_{symbol}.png")
+            try:
+                await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
+            except: pass
+            
+            return "ERRO_LEITURA", 0.0
 
         except Exception as e:
             logger.error(f"💥 [{symbol}] ERRO CRÍTICO GLOBAL na função check_trade_result: {e}", exc_info=True)
