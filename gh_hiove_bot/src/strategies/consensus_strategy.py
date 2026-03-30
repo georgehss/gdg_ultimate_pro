@@ -7,66 +7,86 @@ from .engulf_ma_strategy import EngulfMAStrategy
 logger = logging.getLogger(__name__)
 
 class ConsensusStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe="1m", min_votes_required=1, profile="Balanceado"):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe="1m", min_votes_required=1, profile="Balanceado", active_strategies=None):
         super().__init__(name=f"Consensus_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe_str = timeframe
         
+        # Se nenhuma estratégia for passada, usa as 3 por padrão
+        if active_strategies is None:
+            active_strategies = ["rsi", "ma", "engulf"]
+        self.active_strategies = active_strategies
+        
+        # Trava de segurança: impede que a exigência de votos seja maior que o número de estratégias ativas
+        if min_votes_required > len(self.active_strategies):
+            logger.warning(f"[{self.name}] min_votes_required ({min_votes_required}) é maior que as estratégias ativas ({len(self.active_strategies)}). Ajustando para {len(self.active_strategies)}.")
+            self.min_votes_required = len(self.active_strategies)
+        else:
+            self.min_votes_required = min_votes_required 
+        
         if timeframe == "5m": self.timeframe_seconds = 300
         elif timeframe == "15m": self.timeframe_seconds = 900
         else: self.timeframe_seconds = 60
-        self.min_votes_required = min_votes_required 
         
-        # Instancia as 3 estratégias silenciosamente repassando o perfil escolhido!
-        self.strat_rsi = RSIStrategy(broker, telegram_alert_cb, symbol, timeframe, profile=profile)
-        self.strat_ma = MACrossStrategy(broker, telegram_alert_cb, symbol, timeframe, profile=profile)
-        self.strat_engulf = EngulfMAStrategy(broker, telegram_alert_cb, symbol, timeframe, profile=profile)
+        self.strategies = []
+        self.strat_names = []
         
         async def dummy_alert(msg): pass
-        self.strat_rsi.telegram_alert = dummy_alert
-        self.strat_ma.telegram_alert = dummy_alert
-        self.strat_engulf.telegram_alert = dummy_alert
+        
+        # Instancia dinamicamente apenas as estratégias selecionadas
+        if "rsi" in self.active_strategies:
+            strat = RSIStrategy(broker, dummy_alert, symbol, timeframe, profile=profile)
+            self.strategies.append(strat)
+            self.strat_names.append("RSI Pro")
+            
+        if "ma" in self.active_strategies:
+            strat = MACrossStrategy(broker, dummy_alert, symbol, timeframe, profile=profile)
+            self.strategies.append(strat)
+            self.strat_names.append("MA Cross Pro")
+            
+        if "engulf" in self.active_strategies:
+            strat = EngulfMAStrategy(broker, dummy_alert, symbol, timeframe, profile=profile)
+            self.strategies.append(strat)
+            self.strat_names.append("Price Action Pro")
         
         self.trade_amount = 1.0
         self.trade_duration = "01:00"
 
     async def analyze_market(self):
-        # Executa as 3 análises de forma assíncrona ao mesmo tempo
-        results = await asyncio.gather(
-            self.strat_rsi.analyze_market(),
-            self.strat_ma.analyze_market(),
-            self.strat_engulf.analyze_market()
-        )
+        if not self.strategies:
+            logger.error(f"[{self.name}] Nenhuma estratégia foi selecionada para o consenso!")
+            return None
+
+        # Executa as análises dinamicamente apenas para as estratégias instanciadas
+        tasks = [strat.analyze_market() for strat in self.strategies]
+        results = await asyncio.gather(*tasks)
 
         votes_buy = []
         votes_sell = []
-
-        # Nomes das estratégias para o relatório
-        strat_names = ["RSI Pro", "MA Cross Pro", "Price Action Pro"]
 
         # Verifica quem votou no quê
         for i, res in enumerate(results):
             if res:
                 direction, msg = res
                 if direction == "BUY": 
-                    votes_buy.append(strat_names[i])
+                    votes_buy.append(self.strat_names[i])
                 elif direction == "SELL": 
-                    votes_sell.append(strat_names[i])
+                    votes_sell.append(self.strat_names[i])
 
         num_buy = len(votes_buy)
         num_sell = len(votes_sell)
 
-        # NOVO: Avaliação Inteligente de Conflito Global
+        # Avaliação Inteligente de Conflito Global
         if num_buy > 0 and num_sell > 0:
             logger.warning(f"[{self.name}] ⚠️ CONFLITO GLOBAL: {votes_buy} mandaram Comprar, mas {votes_sell} mandaram Vender. Operação abortada por segurança.")
             return None
             
-        # NOVO: Aprovação de Compra com Relatório
+        # Aprovação de Compra com Relatório
         if num_buy >= self.min_votes_required:
             aprovadores = ", ".join(votes_buy)
             return "BUY", num_buy, aprovadores
             
-        # NOVO: Aprovação de Venda com Relatório
+        # Aprovação de Venda com Relatório
         elif num_sell >= self.min_votes_required:
             aprovadores = ", ".join(votes_sell)
             return "SELL", num_sell, aprovadores
@@ -75,10 +95,9 @@ class ConsensusStrategy(BaseStrategy):
 
     async def execute(self):
         self.is_running = True
-        modo_str = "Hub Sniper (1+ Votos sem conflito)" if self.min_votes_required == 1 else "Conservador Extremo (2+ Votos)"
-        logger.info(f"[{self.name}] 🤝 Orquestrador Inteligente iniciado. Modo: {modo_str}")
+        modo_str = f"Hub Sniper ({self.min_votes_required}+ Votos sem conflito)"
+        logger.info(f"[{self.name}] 🤝 Orquestrador Inteligente iniciado. Estratégias ativas: {self.active_strategies} | Modo: {modo_str}")
         
-        import time
         while self.is_running:
             try:
                 agora = time.time()
@@ -92,8 +111,7 @@ class ConsensusStrategy(BaseStrategy):
                 if resultado:
                     direction, num_votos, aprovadores = resultado
                     
-                    # NOVO: Mensagem profissional formatada para o Telegram
-                    emoji = "🟢 WIN" if direction == "BUY" else "🔴 LOSS" # Aproveitando o estilo que já usas
+                    # Mensagem profissional formatada para o Telegram
                     dir_icon = "🈯️ COMPRA" if direction == "BUY" else "🈲 VENDA"
                     
                     log_msg = (

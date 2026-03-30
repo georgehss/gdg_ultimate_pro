@@ -17,6 +17,7 @@ from api.webhook_server import WebhookServer
 # BLOCO PARA CORRIGIR O ERRO DO WINDOWS
 if sys.platform == 'win32':
     from asyncio.proactor_events import _ProactorBasePipeTransport
+    from asyncio.base_subprocess import BaseSubprocessTransport
     
     def silence_event_loop_closed(func):
         @wraps(func)
@@ -27,7 +28,9 @@ if sys.platform == 'win32':
                 pass
         return wrapper
         
+    # Aplica o silenciador nas duas classes que dão dor de cabeça no Windows
     _ProactorBasePipeTransport.__del__ = silence_event_loop_closed(_ProactorBasePipeTransport.__del__)
+    BaseSubprocessTransport.__del__ = silence_event_loop_closed(BaseSubprocessTransport.__del__)
 
 
 if sys.stdout and sys.stdout.encoding.lower() != 'utf-8':
@@ -105,12 +108,28 @@ async def run_session(tg_bot, global_stop_event):
         await tg_bot.send_alert(f"✅ Estratégia Engolfo MA ({perfil_escolhido}) iniciada!")
 
     elif config["mode"] == "strat_consensus":
+        # Lê as escolhas do bot (se não existir, usa um fallback seguro)
+        ativas = config.get("active_strategies", ["rsi", "ma", "engulf"])
+        votos_necessarios = config.get("min_votes_required", 2)
+        
         for ativo in config["assets"]:
-            strat = ConsensusStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido)
+            strat = ConsensusStrategy(
+                broker=broker, 
+                telegram_alert_cb=tg_bot.send_alert, 
+                symbol=ativo, 
+                timeframe=config.get("timeframe", "1m"), 
+                profile=perfil_escolhido,
+                active_strategies=ativas,            
+                min_votes_required=votos_necessarios 
+            )
             strat.trade_amount, strat.trade_duration = config["amount"], config["duration"]
             manager.add_strategy(strat)
+            
         strategy_task = asyncio.create_task(manager.start_all())
-        await tg_bot.send_alert(f"✅ Estratégia de Consenso ({perfil_escolhido}) iniciada!")
+        
+        # Cria uma mensagem bonitinha de inicialização
+        nomes = [s.upper() for s in ativas]
+        await tg_bot.send_alert(f"✅ Estratégia de Consenso ({perfil_escolhido}) iniciada!\n▫️ Ativas: {', '.join(nomes)}\n▫️ Exige Mín. {votos_necessarios} votos.")
 
     elif config["mode"] == "live":
         webhook = WebhookServer(scraper=scraper, telegram_bot=tg_bot, user_config=config)

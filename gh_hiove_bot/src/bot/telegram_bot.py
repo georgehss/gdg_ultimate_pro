@@ -21,6 +21,8 @@ class TradingTelegramBot:
         self.user_config = {
             "is_demo": True,
             "mode": "strategy",
+            "active_strategies": ["rsi", "ma", "engulf"],
+            "min_votes_required": 2,
             "profile": "Balanceado", 
             "assets": [],
             "timeframe": "1m",     
@@ -141,7 +143,7 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("📈 Estratégias Internas", callback_data='mod_strategy_menu')],
                 [InlineKeyboardButton("📡 Sinais MT5 (Webhook)", callback_data='mod_live')],
                 [InlineKeyboardButton("📋 Lista de Sinais (Em breve)", callback_data='mod_list')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_mode')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_mode')]
             ]
             
         elif self.setup_step == "strategy_type":
@@ -151,8 +153,36 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("📊 Estratégia MA Cross", callback_data='strat_strat_ma')],
                 [InlineKeyboardButton("📊 Estratégia Engolfo MA", callback_data='strat_strat_engulf')],
                 [InlineKeyboardButton("🤝 Consenso (As 3 Juntas)", callback_data='strat_strat_consensus')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_strategy_type')] # <--- Atualizado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_strategy_type')] 
             ]
+
+        elif self.setup_step == "consensus_strategies":
+            text = "🤝 *Estratégias do Consenso*\nQuais estratégias devem participar da votação? (Escolha pelo menos 2)"
+            
+            # Pega as selecionadas (cuidado com erro se for a primeira vez)
+            ativas = self.user_config.get("active_strategies", [])
+            rsi_text = "✅ RSI" if "rsi" in ativas else "RSI"
+            ma_text = "✅ MA Cross" if "ma" in ativas else "MA Cross"
+            engulf_text = "✅ Price Action" if "engulf" in ativas else "Price Action"
+
+            keyboard = [
+                [InlineKeyboardButton(rsi_text, callback_data='cstrat_rsi'),
+                 InlineKeyboardButton(ma_text, callback_data='cstrat_ma')],
+                [InlineKeyboardButton(engulf_text, callback_data='cstrat_engulf')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_consensus_strategies'),
+                 InlineKeyboardButton("➡️ Continuar", callback_data='cstrat_done')] 
+            ]
+
+        elif self.setup_step == "consensus_votes":
+            ativas = len(self.user_config.get("active_strategies", []))
+            text = f"🗳️ *Votos Necessários*\nVocê ativou {ativas} estratégias. Quantos votos iguais a favor (sem conflito) são necessários para fazer uma entrada?"
+            
+            keyboard = []
+            row = []
+            for i in range(1, ativas + 1):
+                row.append(InlineKeyboardButton(f"{i} Voto{'s' if i>1 else ''}", callback_data=f'cvote_{i}'))
+            keyboard.append(row)
+            keyboard.append([InlineKeyboardButton("⬅️ Voltar", callback_data='back_consensus_votes')])
 
         elif self.setup_step == "profile":
             text = "⚖️ *Perfil de Operação*\nComo o robô deve se comportar no mercado?"
@@ -161,7 +191,7 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("⚖️ Balanceado (Padrão)", callback_data='prof_Balanceado')],
                 [InlineKeyboardButton("🔥 Agressivo (Muitas entradas, maior risco)", callback_data='prof_Agressivo')],
                 [InlineKeyboardButton("⚙️ Customizado (Valores padrão originais)", callback_data='prof_Customizado')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')]
             ]
 
         elif self.setup_step == "timeframe":
@@ -195,7 +225,7 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("1 Minuto", callback_data='dur_01:00'),
                  InlineKeyboardButton("5 Minutos", callback_data='dur_05:00')],
                 [InlineKeyboardButton("15 Minutos", callback_data='dur_15:00')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_duration')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_duration')]
             ]
             
         elif self.setup_step == "amount":
@@ -207,7 +237,7 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("$ 5", callback_data='amt_5'),
                  InlineKeyboardButton("$ 10", callback_data='amt_10'),
                  InlineKeyboardButton("$ 20", callback_data='amt_20')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_amount')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_amount')]
             ]
 
         elif self.setup_step == "martingale_type":
@@ -216,7 +246,7 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("❌ Nenhum", callback_data='mgtype_Nenhum')],
                 [InlineKeyboardButton("🕯️ Na Próxima Vela", callback_data='mgtype_Vela')],
                 [InlineKeyboardButton("📡 No Próximo Sinal", callback_data='mgtype_Sinal')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_type')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_type')]
             ]
 
         elif self.setup_step == "martingale_signal_mode":
@@ -236,7 +266,7 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("4 Passos", callback_data='mgstep_4'),
                  InlineKeyboardButton("5 Passos", callback_data='mgstep_5'),
                  InlineKeyboardButton("6 Passos", callback_data='mgstep_6')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_steps')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_steps')]
             ]
 
         elif self.setup_step == "martingale_multiplier":
@@ -250,7 +280,7 @@ class TradingTelegramBot:
                  InlineKeyboardButton("2.2 x", callback_data='mgmult_2.2')],
                 [InlineKeyboardButton("2.5 x", callback_data='mgmult_2.5'),
                  InlineKeyboardButton("3.0 x", callback_data='mgmult_3.0')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_multiplier')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_martingale_multiplier')]
             ]
 
         elif self.setup_step == "take_profit":
@@ -263,7 +293,7 @@ class TradingTelegramBot:
                  InlineKeyboardButton("$ 20", callback_data='tp_20.0')],
                 [InlineKeyboardButton("$ 50", callback_data='tp_50.0'),
                  InlineKeyboardButton("$ 100", callback_data='tp_100.0')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_take_profit')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_take_profit')]
             ]
 
         elif self.setup_step == "stop_loss":
@@ -276,7 +306,7 @@ class TradingTelegramBot:
                  InlineKeyboardButton("-$ 20", callback_data='sl_-20.0')],
                 [InlineKeyboardButton("-$ 50", callback_data='sl_-50.0'),
                  InlineKeyboardButton("-$ 100", callback_data='sl_-100.0')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_stop_loss')] # <--- Adicionado
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_stop_loss')]
             ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -391,6 +421,13 @@ class TradingTelegramBot:
             elif step == 'strategy_type':
                 self.setup_step = 'mode'
             elif step == 'profile':
+                if self.user_config.get("mode") == "strat_consensus":
+                    self.setup_step = 'consensus_votes'
+                else:
+                    self.setup_step = 'strategy_type'
+            elif step == 'consensus_votes':             
+                self.setup_step = 'consensus_strategies'
+            elif step == 'consensus_strategies':
                 self.setup_step = 'strategy_type'
             elif step == 'assets':
                 # Se for live ou list, ele veio direto de 'mode'. Se for estratégia, veio de 'profile'
@@ -451,7 +488,35 @@ class TradingTelegramBot:
         elif data.startswith('strat_'):
             strat_escolhida = data.replace('strat_', '', 1)
             self.user_config["mode"] = strat_escolhida
-            self.setup_step = "profile"
+            
+            # Se escolheu Consenso, vai para o menu de escolha de estratégias. Senão, vai para perfil.
+            if strat_escolhida == "strat_consensus":
+                self.setup_step = "consensus_strategies"
+            else:
+                self.setup_step = "profile"
+
+        # Passo 2.2: Escolhendo estratégias do consenso
+        elif data.startswith('cstrat_'):
+            strat = data.replace('cstrat_', '')
+            if strat == "done":
+                if len(self.user_config.get("active_strategies", [])) < 2:
+                    await query.answer("Escolha pelo menos 2 estratégias para haver consenso!", show_alert=True)
+                    return
+                self.setup_step = "consensus_votes"
+            else:
+                # Toggle (Adiciona ou Remove)
+                if "active_strategies" not in self.user_config:
+                    self.user_config["active_strategies"] = []
+                
+                if strat in self.user_config["active_strategies"]:
+                    self.user_config["active_strategies"].remove(strat)
+                else:
+                    self.user_config["active_strategies"].append(strat)
+
+        # Passo 2.3: Escolhendo votos do consenso
+        elif data.startswith('cvote_'):
+            self.user_config["min_votes_required"] = int(data.split('_')[1])
+            self.setup_step = "profile" # Avança para o perfil após escolher os votos
                 
         # NOVO PASSO: Perfil de Operação
         elif data.startswith('prof_'):

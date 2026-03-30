@@ -73,9 +73,9 @@ class WebhookServer:
             minutos_ativo, _ = map(int, duration.split(':'))
             
             if agora.second <= 30:
-                segundos_espera = (60 - agora.second) + ((minutos_ativo - 1) * 60) + 1
+                segundos_espera = (60 - agora.second) + ((minutos_ativo - 1) * 60) + 5
             else:
-                segundos_espera = (60 - agora.second) + (minutos_ativo * 60) + 1
+                segundos_espera = (60 - agora.second) + (minutos_ativo * 60) + 5
                 
             logger.info(f"⏳ Ordem colocada. A aguardar {segundos_espera}s sincronizados com o relógio da corretora...")
             await asyncio.sleep(segundos_espera)
