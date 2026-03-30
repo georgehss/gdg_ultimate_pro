@@ -1,4 +1,5 @@
 import asyncio, logging, signal, sys, os
+from functools import wraps
 from datetime import datetime
 from core.config import HIOVE_EMAIL, HIOVE_PASSWORD
 from api.broker_api import HioveBrokerAPI
@@ -11,6 +12,23 @@ from strategies.engulf_ma_strategy import EngulfMAStrategy
 from strategies.consensus_strategy import ConsensusStrategy
 from core.database import init_db
 from api.webhook_server import WebhookServer
+
+
+# BLOCO PARA CORRIGIR O ERRO DO WINDOWS
+if sys.platform == 'win32':
+    from asyncio.proactor_events import _ProactorBasePipeTransport
+    
+    def silence_event_loop_closed(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except (RuntimeError, ValueError):
+                pass
+        return wrapper
+        
+    _ProactorBasePipeTransport.__del__ = silence_event_loop_closed(_ProactorBasePipeTransport.__del__)
+
 
 if sys.stdout and sys.stdout.encoding.lower() != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
