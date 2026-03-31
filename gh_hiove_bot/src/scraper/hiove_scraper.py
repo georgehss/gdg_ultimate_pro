@@ -585,21 +585,6 @@ class HioveScraper:
                         if self.last_trade_times.get(symbol) == texto_tempo:
                             logger.debug(f"⏭️ [{symbol}] Linha ignorada: Tempo '{texto_tempo}' já está na memória.")
                             continue 
-
-                        # --- C. VERIFICA A REGRA DOS 30 SEGUNDOS ---
-                        if hora_sinal:
-                            try:
-                                from datetime import datetime, timedelta
-                                hora_obj = datetime.strptime(hora_sinal, "%H:%M:%S")
-                                if hora_obj.second <= 30:
-                                    minuto_esperado = hora_obj.strftime("%H:%M")
-                                else:
-                                    minuto_esperado = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
-                                
-                                if minuto_esperado not in texto_tempo:
-                                    continue
-                            except Exception as e:
-                                logger.error(f"❌ [{symbol}] Erro na regra de tempo: {e}")
                             
                         # --- D. VERIFICA O VALOR E RESULTADO ---
                         elemento_valor = item.locator('h5')
@@ -607,19 +592,22 @@ class HioveScraper:
                         classes_css = await elemento_valor.get_attribute('class')
                         
                         try:
+                            # Converte o texto da corretora para número (ex: -$1.00 ou $0.00 ou $1.85)
                             lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
                         except ValueError:
                             continue
-                        
-                        if amount is not None and 'ant-typography-danger' in classes_css:
-                            if abs(lucro_bruto) < float(amount) * 0.8:
-                                continue
 
                         # --- DEFINIÇÃO DO RESULTADO FINAL ---
                         if 'ant-typography-success' in classes_css: status = "WIN"
-                        elif 'ant-typography-danger' in classes_css: status = "LOSS"
                         elif 'ant-typography-secondary' in classes_css: status = "EMPATE"
+                        elif 'ant-typography-danger' in classes_css: status = "LOSS"
                         else: status = "DESCONHECIDO"
+
+                        # CORREÇÃO DEFINITIVA DO EMPATE: 
+                        # Se o resultado financeiro da corretora for $0.00, forçamos o status para EMPATE, 
+                        # independentemente da cor que o site mostrar.
+                        if lucro_bruto == 0.0:
+                            status = "EMPATE"
 
                         logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
                         
