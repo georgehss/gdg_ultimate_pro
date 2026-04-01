@@ -18,6 +18,7 @@ class HioveScraper:
         self.playwright = None
         self.contexts = {} # Dicionário para guardar a JANELA exclusiva de cada ativo
         self.pages = {} # Dicionário para guardar a aba exclusiva de cada ativo
+        self.active_payouts = {} # 🚀 NOVO: Memória para guardar o payout de cada ativo
         self.asset_configs = {} # Guarda a configuração de tempo/valor de cada ativo
         self.last_trade_times = {} # Memória para não ler o mesmo horário de operação duas vezes
         self.keep_alive_task = None # Guarda a tarefa anti-inatividade
@@ -295,7 +296,21 @@ class HioveScraper:
             await asyncio.sleep(0.5)
             
             await page.locator('input[placeholder="Pesquisar aqui"]').fill(symbol)
-            await asyncio.sleep(1.5) 
+            await asyncio.sleep(1.5)
+
+            # 🚀 NOVO: CAPTURAR O PAYOUT NA LISTA DE ATIVOS
+            try:
+                # Usa seletor parcial para ignorar o código aleatório do final da classe
+                payout_element = page.locator('div[class*="_payoutCell_"]').first
+                payout_text = await payout_element.inner_text(timeout=3000)
+                
+                # Converte "85%" para 0.85 e salva na memória
+                payout_val = float(payout_text.replace('%', '').strip()) / 100.0
+                self.active_payouts[symbol] = payout_val
+                logger.info(f"[{symbol}] Payout capturado na seleção: {payout_text}")
+            except Exception as e:
+                self.active_payouts[symbol] = 0.85 # Valor de segurança caso a tela não carregue
+                logger.debug(f"[{symbol}] Usando payout padrão de 85% temporariamente.")
             
             await page.locator(f'text="{symbol}"').first.click(timeout=10000)
             
@@ -405,8 +420,14 @@ class HioveScraper:
                 # Aumentamos o timeout para garantir que dá tempo do site carregar a %
                 if await payout_locator.is_visible(timeout=2500):
                     payout_str = await payout_locator.inner_text()
+                    
+                    # 🚀 NOVIDADE: Converte o texto (ex: "85%") para decimal (0.85) e salva na memória
+                    if hasattr(self, 'active_payouts'):
+                        self.active_payouts[symbol] = float(payout_str.replace('%', '').strip()) / 100.0
+                        logger.debug(f"[{symbol}] Payout atualizado instantes antes da ordem: {payout_str}")
+                        
             except Exception as e:
-                logger.debug(f"Aviso: Não foi possível ler o payout: {e}")
+                logger.debug(f"Aviso: Não foi possível ler o payout antes da ordem: {e}")
             
             # ==========================================
             # SINCRONIZAÇÃO COM O RELÓGIO DA CORRETORA
@@ -586,6 +607,26 @@ class HioveScraper:
                             logger.debug(f"⏭️ [{symbol}] Linha ignorada: Tempo '{texto_tempo}' já está na memória.")
                             continue 
                             
+                        # ========================================================
+                        # 🚀 NOVO CÓDIGO: FILTRO DE HORÁRIO EXATO (TRAVA DE MINUTO)
+                        # ========================================================
+                        if hora_sinal:
+                            try:
+                                from datetime import datetime, timedelta
+                                # Converte a hora do sinal (ex: "23:47:05") para pegar só as Horas e Minutos
+                                hora_obj = datetime.strptime(str(hora_sinal), "%H:%M:%S")
+                                min_exato = hora_obj.strftime("%H:%M")
+                                
+                                # Margem de segurança de 1 minuto caso a corretora arredonde pra cima
+                                min_seguinte = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
+                                
+                                # A linha do histórico OBRIGATORIAMENTE tem que conter o minuto exato do sinal
+                                if min_exato not in texto_tempo and min_seguinte not in texto_tempo:
+                                    logger.debug(f"⚠️ [{symbol}] Descartando linha antiga: O tempo da corretora '{texto_tempo}' não bate com o sinal de '{min_exato}'.")
+                                    continue
+                            except Exception as e:
+                                pass # Em caso de erro, segue a vida e deixa o Filtro Matemático resolver
+                            
                         # --- D. VERIFICA O VALOR E RESULTADO ---
                         elemento_valor = item.locator('h5')
                         texto_valor = await elemento_valor.inner_text() 
@@ -608,6 +649,28 @@ class HioveScraper:
                         # independentemente da cor que o site mostrar.
                         if lucro_bruto == 0.0:
                             status = "EMPATE"
+
+                        # 🚀 NOVO CÓDIGO: CRUZAMENTO DE DADOS (FILTRO DE LINHAS ANTIGAS)
+                        if amount is not None:
+                            aposta = float(amount)
+                            
+                            if status == "LOSS":
+                                if abs(lucro_bruto) != aposta:
+                                    logger.debug(f"⚠️ [{symbol}] Descartando linha: LOSS de ${abs(lucro_bruto)} é antigo. A aposta atual é ${aposta}.")
+                                    continue
+                                    
+                            elif status == "WIN":
+                                # Puxa o payout capturado (ex: 0.85)
+                                payout_decimal = getattr(self, 'active_payouts', {}).get(symbol, 0.85)
+                                
+                                # Calcula o valor exato que deve estar na tela (Aposta + Lucro)
+                                # Ex: 1.00 + (1.00 * 0.85) = 1.85
+                                valor_win_esperado = aposta + (aposta * payout_decimal)
+                                
+                                # Tolerância de 2 centavos para caso a corretora faça arredondamentos internos
+                                if abs(lucro_bruto - valor_win_esperado) > 0.02:
+                                    logger.debug(f"⚠️ [{symbol}] Descartando linha: WIN de ${lucro_bruto} é antigo. O esperado para a aposta de ${aposta} era ~${valor_win_esperado:.2f}.")
+                                    continue
 
                         logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
                         
