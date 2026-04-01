@@ -483,9 +483,37 @@ class HioveScraper:
 
         except PlaywrightTimeoutError:
             logger.error(f"❌ [{symbol}] Os botões de ordem sumiram da tela. A tirar print do ecrã...")
+            
+            # Garante que a pasta existe antes de salvar o print
+            import os
+            os.makedirs("logs", exist_ok=True) 
             await page.screenshot(path=f"logs/erro_timeout_{symbol}.png")
+            
+            # ==========================================
+            # 🚀 NOVA ROTINA DE RECARREGAMENTO E RECUPERAÇÃO
+            # ==========================================
+            logger.warning(f"🔄 [{symbol}] Iniciando protocolo de recuperação da aba corrompida...")
+            try:
+                # 1. Força um F5 (Reload) para destravar o DOM da página
+                await page.reload(timeout=30000)
+                await page.wait_for_load_state('networkidle', timeout=15000)
+                await asyncio.sleep(3)
+                
+                # 2. Reaproveita a sua função de segurança para reconfigurar o ativo, tempo e valor
+                logger.info(f"🛡️ [{symbol}] Página recarregada. Reconfigurando ativo para os próximos sinais...")
+                await self._relogin_and_reconfigure(symbol, page)
+                
+            except Exception as e_recovery:
+                logger.error(f"❌ [{symbol}] Falha catstrófica ao tentar recuperar a aba: {e_recovery}")
+                
+            # Retorna None porque a entrada atual foi perdida (o timing já passou), 
+            # mas a aba está salva para a próxima oportunidade.
+            return None 
+
         except Exception as e:
             logger.error(f"❌ [{symbol}] Erro inesperado ao clicar: {e}")
+            import os
+            os.makedirs("logs", exist_ok=True)
             await page.screenshot(path=f"logs/erro_inesperado_{symbol}.png")
             return None
             
