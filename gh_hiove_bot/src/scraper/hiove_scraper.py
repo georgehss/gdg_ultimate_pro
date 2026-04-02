@@ -575,7 +575,7 @@ class HioveScraper:
             return 0.0
 
     async def check_trade_result(self, symbol: str, amount: float = None, hora_sinal: str = None) -> tuple[str, float]:
-        """Abre o histórico, varre a lista cruzando Ativo, Tempo e Valor."""
+        """Abre o histórico, varre a lista cruzando Ativo, Tempo e Valor (Mapeamento Atualizado)."""
         page = self.pages.get(symbol)
         if not page:
             logger.error(f"❌ [{symbol}] ERRO: A página do ativo não foi encontrada.")
@@ -584,15 +584,16 @@ class HioveScraper:
         try:
             logger.info(f"⏳ [{symbol}] Operação finalizada. Aguardando a corretora processar...")
               
-            # AUMENTO DE TENTATIVAS: Tenta 6 vezes
             for tentativa in range(6):
                 logger.debug(f"🔄 [{symbol}] Iniciando tentativa de leitura {tentativa + 1}/6...")
                 
+                # Atualização: Seletores mapeados conforme a nova documentação DOM
                 xpath_btn_operacoes = '//*[@id="sider-trade"]/div/div/div/div[1]/button[1]'
                 xpath_btn_historico = '//*[@id="sider-trade"]/div/div/div/div[1]/button[2]'
                 
                 try:
                     logger.debug(f"🖱️ [{symbol}] Clicando em 'Operações' para resetar a aba...")
+                    # O clique no botão principal já engloba o <span> interno mapeado
                     await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=3000)
                     await asyncio.sleep(0.5)
                     
@@ -601,116 +602,98 @@ class HioveScraper:
                 except Exception as e:
                     logger.warning(f"⚠️ [{symbol}] Falha ao alternar abas de refresh: {e}")
                 
-                # Espera 1.5s para a aba carregar os itens novos
                 await asyncio.sleep(1.5)
             
-                # =======================================================
-                # AGORA ESTÁ DENTRO DO LOOP! Ele confere a cada tentativa
-                # =======================================================
-                xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]//ul/li'
+                # Atualização: Lista EXATA apontada no seu TXT de checagem
+                xpath_itens = '//*[@id="sider-trade"]/div/div/div/div[2]/div/div/div/div/ul/li'
                 itens = await page.locator(f'xpath={xpath_itens}').all()
                 
                 logger.debug(f"📋 [{symbol}] Foram encontradas {len(itens)} operações na lista. Lendo as 3 primeiras...")
                 
                 if not itens:
                     logger.debug(f"⚠️ [{symbol}] A lista de histórico está vazia nesta tentativa.")
-                    continue # Volta para o topo do FOR e tenta o próximo clique
+                    continue
                 
                 for index, item in enumerate(itens[:3]):
                     try:
                         logger.debug(f"🔍 [{symbol}] Analisando linha {index + 1}...")
                         
                         # --- A. VERIFICA O ATIVO ---
-                        elemento_titulo = item.locator('h4.ant-list-item-meta-title')
+                        # Atualização: Buscando especificamente o <span> dentro do h4 da linha
+                        elemento_titulo = item.locator('h4 span').first
                         if not await elemento_titulo.is_visible(): continue
                             
                         texto_ativo = await elemento_titulo.inner_text()
                         if texto_ativo != symbol: continue
                             
                         # --- B. VERIFICA O TEMPO E A MEMÓRIA ---
-                        elemento_tempo = item.locator('.ant-list-item-meta-description span').first
+                        # Atualização: O tempo é o span de font-size: 10px mapeado no TXT
+                        elemento_tempo = item.locator('div._meta-description_n50my_253 span').first
+                        if not await elemento_tempo.is_visible():
+                            # Fallback para a busca genérica caso a classe dinâmica "_n50my_253" mude
+                            elemento_tempo = item.locator('.ant-list-item-meta-description span').first
+                            
                         texto_tempo = await elemento_tempo.inner_text() 
                         
                         if self.last_trade_times.get(symbol) == texto_tempo:
                             logger.debug(f"⏭️ [{symbol}] Linha ignorada: Tempo '{texto_tempo}' já está na memória.")
                             continue 
                             
-                        # ========================================================
-                        # 🚀 NOVO CÓDIGO: FILTRO DE HORÁRIO EXATO (TRAVA DE MINUTO)
-                        # ========================================================
+                        # --- FILTRO DE HORÁRIO EXATO (TRAVA DE MINUTO) ---
                         if hora_sinal:
                             try:
                                 from datetime import datetime, timedelta
-                                # Converte a hora do sinal (ex: "23:47:05") para pegar só as Horas e Minutos
                                 hora_obj = datetime.strptime(str(hora_sinal), "%H:%M:%S")
                                 min_exato = hora_obj.strftime("%H:%M")
-                                
-                                # Margem de segurança de 1 minuto caso a corretora arredonde pra cima
                                 min_seguinte = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
                                 
-                                # A linha do histórico OBRIGATORIAMENTE tem que conter o minuto exato do sinal
                                 if min_exato not in texto_tempo and min_seguinte not in texto_tempo:
-                                    logger.debug(f"⚠️ [{symbol}] Descartando linha antiga: O tempo da corretora '{texto_tempo}' não bate com o sinal de '{min_exato}'.")
+                                    logger.debug(f"⚠️ [{symbol}] Descartando linha antiga: '{texto_tempo}' não bate com o sinal '{min_exato}'.")
                                     continue
-                            except Exception as e:
-                                pass # Em caso de erro, segue a vida e deixa o Filtro Matemático resolver
+                            except Exception:
+                                pass 
                             
                         # --- D. VERIFICA O VALOR E RESULTADO ---
-                        elemento_valor = item.locator('h5')
+                        # Mapeamento do H5 com os seletores de classe de Typography
+                        elemento_valor = item.locator('h5').first
                         texto_valor = await elemento_valor.inner_text() 
                         classes_css = await elemento_valor.get_attribute('class')
                         
                         try:
-                            # Converte o texto da corretora para número (ex: -$1.00 ou $0.00 ou $1.85)
                             lucro_bruto = float(texto_valor.replace('$', '').replace(',', '').strip())
                         except ValueError:
                             continue
 
-                        # --- DEFINIÇÃO DO RESULTADO FINAL ---
+                        # Identificando a vitória ou derrota com base nas classes fornecidas no TXT
                         if 'ant-typography-success' in classes_css: status = "WIN"
                         elif 'ant-typography-secondary' in classes_css: status = "EMPATE"
                         elif 'ant-typography-danger' in classes_css: status = "LOSS"
                         else: status = "DESCONHECIDO"
 
-                        # CORREÇÃO DEFINITIVA DO EMPATE: 
-                        # Se o resultado financeiro da corretora for $0.00, forçamos o status para EMPATE, 
-                        # independentemente da cor que o site mostrar.
                         if lucro_bruto == 0.0:
                             status = "EMPATE"
 
-                        # 🚀 NOVO CÓDIGO: CRUZAMENTO DE DADOS (FILTRO DE LINHAS ANTIGAS)
+                        # CRUZAMENTO DE DADOS (FILTRO DE LINHAS ANTIGAS)
                         if amount is not None:
                             aposta = float(amount)
-                            
-                            if status == "LOSS":
-                                if abs(lucro_bruto) != aposta:
-                                    logger.debug(f"⚠️ [{symbol}] Descartando linha: LOSS de ${abs(lucro_bruto)} é antigo. A aposta atual é ${aposta}.")
-                                    continue
-                                    
+                            if status == "LOSS" and abs(lucro_bruto) != aposta:
+                                logger.debug(f"⚠️ [{symbol}] LOSS ${abs(lucro_bruto)} é antigo. Esperado: ${aposta}.")
+                                continue
                             elif status == "WIN":
-                                # Puxa o payout capturado (ex: 0.85)
                                 payout_decimal = getattr(self, 'active_payouts', {}).get(symbol, 0.85)
-                                
-                                # Calcula o valor exato que deve estar na tela (Aposta + Lucro)
-                                # Ex: 1.00 + (1.00 * 0.85) = 1.85
                                 valor_win_esperado = aposta + (aposta * payout_decimal)
-                                
-                                # Tolerância de 2 centavos para caso a corretora faça arredondamentos internos
                                 if abs(lucro_bruto - valor_win_esperado) > 0.02:
-                                    logger.debug(f"⚠️ [{symbol}] Descartando linha: WIN de ${lucro_bruto} é antigo. O esperado para a aposta de ${aposta} era ~${valor_win_esperado:.2f}.")
+                                    logger.debug(f"⚠️ [{symbol}] WIN de ${lucro_bruto} antigo. Esperado: ~${valor_win_esperado:.2f}.")
                                     continue
 
                         logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
                         
-                        # Salva na memória
                         self.last_trade_times[symbol] = texto_tempo
 
-                        # Volta para a aba Operações de forma segura antes de sair
                         try:
                             await page.locator(f'xpath={xpath_btn_operacoes}').click(timeout=5000)
                         except: pass
                             
-                        # RETORNO IMEDIATO: Interrompe tudo pois achou o resultado
                         return status, lucro_bruto
 
                     except Exception as e:
@@ -719,9 +702,6 @@ class HioveScraper:
                         
                 logger.debug(f"🔄 [{symbol}] Nenhum resultado nesta tentativa. Recarregando...")
 
-            # =======================================================
-            # FIM DO LAÇO DE 6 TENTATIVAS
-            # =======================================================
             logger.error(f"🛑 [{symbol}] ESGOTADO! O resultado não apareceu no histórico após 6 tentativas cruzando os dados.")
             await page.screenshot(path=f"logs/erro_historico_{symbol}.png")
             try:
