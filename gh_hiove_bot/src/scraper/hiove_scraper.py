@@ -206,12 +206,11 @@ class HioveScraper:
 
                             if relogio_1 == relogio_2 and ":" in relogio_1:
                                 logger.warning(f"⚠️ [{symbol}] TELA CONGELADA! Relógio travado em '{relogio_1}'. A página perdeu conexão.")
-                                logger.info(f"🔄 [{symbol}] Forçando recarregamento (F5) para restabelecer o ativo...")
+                                logger.info(f"🔄 [{symbol}] Iniciando recuperação total da aba congelada...")
                                 
-                                await page.reload(timeout=30000)
-                                await page.wait_for_load_state('networkidle', timeout=15000)
-                                await asyncio.sleep(3)
-                                logger.info(f"✅ [{symbol}] Página recarregada com sucesso e pronta para operar!")
+                                # A SOLUÇÃO: Em vez de só dar F5 (que faz a corretora sofrer amnésia), 
+                                # usamos a função blindada que reconstrói a aba, o ativo, o tempo e o valor do zero!
+                                await self._relogin_and_reconfigure(symbol, page)
 
                     except Exception as e:
                         logger.debug(f"Aviso no Monitor de Congelamento da aba {symbol}: {e}")
@@ -274,16 +273,29 @@ class HioveScraper:
         }
         
         try:
-            # 1. Copia os cookies e o login da janela principal
-            state = await self.main_context.storage_state()
-            
-            # 2. Cria uma JANELA separada e já logada
-            new_context = await self.browser.new_context(storage_state=state, **self.context_args)
-            page = await new_context.new_page()
+            # Verifica se já existem abas configuradas na memória
+            if not self.pages:
+                # É o primeiro ativo! Reaproveita a aba principal de login
+                logger.info(f"Reaproveitando a janela principal para o ativo {symbol}...")
+                new_context = self.main_context
+                page = self.main_page
+            else:
+                # Do segundo ativo em diante, cria as janelas isoladas
+                # 1. Copia os cookies e o login da janela principal
+                state = await self.main_context.storage_state()
+                
+                # 2. Cria uma JANELA separada e já logada
+                new_context = await self.browser.new_context(storage_state=state, **self.context_args)
+                page = await new_context.new_page()
+                
+                await page.goto(self.main_page.url, wait_until='domcontentloaded', timeout=60000)
+                await asyncio.sleep(5)
             
             # 3. Salva na memória
             self.contexts[symbol] = new_context
             self.pages[symbol] = page
+            
+            logger.info(f"Pesquisando e selecionando {symbol}...")
             
             await page.goto(self.main_page.url, wait_until='domcontentloaded', timeout=60000)
             await asyncio.sleep(5)
@@ -537,12 +549,12 @@ class HioveScraper:
     async def close(self):
         """Fecha o navegador de forma segura"""
         try:
-            # NOVO: Cancela a rotina Anti-Inatividade antes de fechar
             if self.keep_alive_task and not self.keep_alive_task.done():
                 self.keep_alive_task.cancel()
                 
-            if self.context:
-                await self.context.close()
+            # Mude de self.context para self.main_context aqui:
+            if self.main_context: 
+                await self.main_context.close()
             if self.browser:
                 await self.browser.close()
             if self.playwright:
@@ -642,16 +654,28 @@ class HioveScraper:
                         # --- FILTRO DE HORÁRIO EXATO (TRAVA DE MINUTO) ---
                         if hora_sinal:
                             try:
-                                from datetime import datetime, timedelta
+                                from datetime import datetime
                                 hora_obj = datetime.strptime(str(hora_sinal), "%H:%M:%S")
-                                min_exato = hora_obj.strftime("%H:%M")
-                                min_seguinte = (hora_obj + timedelta(minutes=1)).strftime("%H:%M")
                                 
-                                if min_exato not in texto_tempo and min_seguinte not in texto_tempo:
-                                    logger.debug(f"⚠️ [{symbol}] Descartando linha antiga: '{texto_tempo}' não bate com o sinal '{min_exato}'.")
+                                # Pega a duração configurada (ex: "05:00") e extrai os minutos (5)
+                                config = self.asset_configs.get(symbol, {})
+                                duracao_str = config.get("close_time", "01:00")
+                                minutos_vela = int(duracao_str.split(':')[0])
+                                if minutos_vela == 0: minutos_vela = 1
+                                
+                                # Calcula o início exato da vela arredondando para o múltiplo correspondente
+                                minuto_inicio_vela = (hora_obj.minute // minutos_vela) * minutos_vela
+                                
+                                # Cria o formato de hora que a Hiove exibe (ex: "20:30")
+                                hora_vela_esperada = f"{hora_obj.hour:02d}:{minuto_inicio_vela:02d}"
+                                min_exato = hora_obj.strftime("%H:%M") # Backup para M1
+                                
+                                if hora_vela_esperada not in texto_tempo and min_exato not in texto_tempo:
+                                    logger.debug(f"⚠️ [{symbol}] Descartando linha antiga: '{texto_tempo}' não bate com a vela '{hora_vela_esperada}'.")
                                     continue
-                            except Exception:
-                                pass 
+                            except Exception as e:
+                                logger.debug(f"Aviso no filtro de hora: {e}")
+                                pass
                             
                         # --- D. VERIFICA O VALOR E RESULTADO ---
                         # Mapeamento do H5 com os seletores de classe de Typography
@@ -680,11 +704,16 @@ class HioveScraper:
                                 logger.debug(f"⚠️ [{symbol}] LOSS ${abs(lucro_bruto)} é antigo. Esperado: ${aposta}.")
                                 continue
                             elif status == "WIN":
-                                payout_decimal = getattr(self, 'active_payouts', {}).get(symbol, 0.85)
-                                valor_win_esperado = aposta + (aposta * payout_decimal)
-                                if abs(lucro_bruto - valor_win_esperado) > 0.02:
-                                    logger.debug(f"⚠️ [{symbol}] WIN de ${lucro_bruto} antigo. Esperado: ~${valor_win_esperado:.2f}.")
+                                # Removemos a trava do cálculo de payout exato (para não barrar WINS quando dá erro de "N/A").
+                                # Apenas validamos se o dinheiro que retornou é maior que a aposta.
+                                if lucro_bruto <= aposta:
+                                    logger.debug(f"⚠️ [{symbol}] WIN de ${lucro_bruto} inválido. Aposta era: ${aposta}.")
                                     continue
+                                
+                                # BÔNUS: Atualiza a memória com o Payout REAL que a corretora acabou de pagar!
+                                payout_real = (lucro_bruto - aposta) / aposta
+                                if hasattr(self, 'active_payouts'):
+                                    self.active_payouts[symbol] = payout_real
 
                         logger.info(f"✅ [{symbol}] HISTÓRICO CONFIRMADO! -> Ativo: {texto_ativo} | Tempo: {texto_tempo} | Valor: {texto_valor} | Status: {status}")
                         

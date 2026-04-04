@@ -149,18 +149,23 @@ class HioveBrokerAPI:
             asyncio.create_task(telegram_alert_cb(msg_entrada))
             # ==========================================
             
-            # CÁLCULO DINÂMICO DE ESPERA (REGRA DOS 30 SEGUNDOS)
+            # CÁLCULO DINÂMICO DE ESPERA (SINCRONIZADO COM O RELÓGIO DA VELA)
             agora = datetime.now()
             minutos_ativo, _ = map(int, duration.split(':'))
             
-            if agora.second <= 30:
-                # Pertence ao minuto atual. Subtrai 1 minuto pois o minuto atual já está a correr
-                segundos_espera = (60 - agora.second) + ((minutos_ativo - 1) * 60) + 1
-            else:
-                # Empurrado para o minuto seguinte. Tempo restante deste minuto + tempo total do ativo
-                segundos_espera = (60 - agora.second) + (minutos_ativo * 60) + 1
-                
-            logger.info(f"⏳ [{symbol}] O robô dormirá por {segundos_espera}s para sincronizar com a corretora...")
+            # 1. Calcula o resto da divisão do minuto atual pelo tempo da operação
+            resto_minutos = agora.minute % minutos_ativo
+            
+            # 2. Descobre quantos minutos inteiros faltam para o próximo fechamento (ex: 19:35)
+            minutos_restantes = minutos_ativo - resto_minutos
+            
+            # 3. Converte para segundos e subtrai os segundos que já passaram no minuto atual
+            segundos_espera = (minutos_restantes * 60) - agora.second
+            
+            # 4. Adiciona margem de segurança de 3 a 4 segundos para a corretora atualizar o histórico
+            segundos_espera += 3
+            
+            logger.info(f"⏳ [{symbol}] O robô dormirá por {segundos_espera}s para sincronizar com o fechamento exato da corretora...")
             
             self.active_monitors += 1
             asyncio.create_task(self._monitor_task(
