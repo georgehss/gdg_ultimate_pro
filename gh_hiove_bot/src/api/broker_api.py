@@ -114,6 +114,9 @@ class HioveBrokerAPI:
                     self.limit_reached_msg = msg
             return None
 
+        # 🚀 NOVIDADE: Captura o saldo EXATAMENTE antes de dar a entrada
+        saldo_inicial = await self.scraper.get_balance(symbol)
+
         logger.info(f"⚡ Disparando ordem de {direction} via Estratégia...")
         # Adicione a variável 'amount' na chamada para o scraper!
         resultado = await self.scraper.place_order(symbol, direction, amount)
@@ -170,7 +173,7 @@ class HioveBrokerAPI:
             self.active_monitors += 1
             asyncio.create_task(self._monitor_task(
                 symbol, order_id, segundos_espera, telegram_alert_cb, 
-                amount, direction, duration, current_step, payout_str, hora_atual
+                amount, direction, duration, current_step, payout_str, hora_atual, saldo_inicial
             ))
         else:
             await log_trade(symbol, direction, amount, duration, "FALHOU", None)
@@ -178,25 +181,55 @@ class HioveBrokerAPI:
             logger.error(msg_erro.replace('*', ''))
             await telegram_alert_cb(msg_erro)
 
-    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A", hora_sinal: str = ""):
+    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A", hora_sinal: str = "", saldo_inicial: float = 0.0):
         try:
             """Espera o tempo calculado matematicamente, lê o histórico e calcula o lucro líquido real"""
             
-            # O tempo de espera exato (sincronizado com os 30s da corretora) já foi calculado!
-            # Basta o bot dormir exatamente essa quantidade de segundos.
+            # O tempo de espera exato já foi calculado!
             await asyncio.sleep(tempo_espera)
             
             status, lucro_bruto = await self.scraper.check_trade_result(symbol, amount, hora_sinal)
             
+            cancelar_mg_vela = False # 🛡️ Flag de proteção para o timing da vela
+            
             # ==========================================
-            # 1. CONVERSÃO PARA LUCRO LÍQUIDO
+            # 1. FALLBACK DE SALDO & CONVERSÃO PARA LUCRO LÍQUIDO
             # ==========================================
-            if status == "WIN":
-                lucro_liquido = lucro_bruto - amount
-            elif status == "EMPATE":
-                lucro_liquido = 0.0
+            if status == "ERRO_LEITURA":
+                # Só executa o plano B se houver apenas esta ordem rodando
+                if self.active_monitors == 1:
+                    logger.warning(f"⚠️ [{symbol}] Histórico falhou. Acionando verificação de segurança por Saldo...")
+                    
+                    saldo_final = await self.scraper.get_balance(symbol)
+                    delta_lucro = saldo_final - saldo_inicial
+                    
+                    if delta_lucro > 0:
+                        status = "WIN"
+                        lucro_liquido = delta_lucro
+                    elif delta_lucro < 0:
+                        status = "LOSS"
+                        lucro_liquido = delta_lucro # Já vem negativo
+                        
+                        # PROTEÇÃO DO TIMING DE VELA
+                        if self.user_config.get("martingale_type", "Nenhum") == 'Vela':
+                            logger.warning(f"⏳ [{symbol}] LOSS deduzido por saldo, mas perdemos o tempo da nova vela.")
+                            cancelar_mg_vela = True
+                    else:
+                        status = "EMPATE"
+                        lucro_liquido = 0.0
+                        
+                    logger.info(f"✅ [{symbol}] Recuperação por saldo concluída! Status: {status} | Lucro deduzido: ${lucro_liquido:.2f}")
+                else:
+                    logger.error(f"🛑 [{symbol}] Erro mantido. Múltiplas ordens simultâneas impedem o cálculo por saldo.")
+                    lucro_liquido = 0.0
             else:
-                lucro_liquido = lucro_bruto 
+                # O sistema nativo leu corretamente
+                if status == "WIN":
+                    lucro_liquido = lucro_bruto - amount
+                elif status == "EMPATE":
+                    lucro_liquido = 0.0
+                else:
+                    lucro_liquido = lucro_bruto 
                 
             await update_trade_result(order_id, status, lucro_liquido)
             
@@ -258,12 +291,18 @@ class HioveBrokerAPI:
                     next_amount = amount * mg_mult
 
                     if mg_type == "Vela":
-                        motivo = "Empate" if status == "EMPATE" else "Loss"
-                        msg_mg = f"🔄 *Martingale Vela* acionado por {motivo}! (Passo {next_step}/{mg_steps})\nEntrando imediatamente com ${next_amount:.2f} em {symbol} ({direction})."
-                        asyncio.create_task(telegram_alert_cb(msg_mg)) 
-                        asyncio.create_task(self.place_order_and_monitor(
-                            symbol, direction, next_amount, duration, telegram_alert_cb, current_step=next_step
-                        ))
+                        if cancelar_mg_vela:
+                            # Evita entrar na vela com 15+ segundos de atraso
+                            msg_mg = f"⚠️ *Martingale Vela Cancelado* em {symbol}!\nO resultado demorou muito a carregar na corretora e perdemos a abertura exata da próxima vela. A mão voltará ao valor inicial para proteger o capital."
+                            asyncio.create_task(telegram_alert_cb(msg_mg))
+                            self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
+                        else:
+                            motivo = "Empate" if status == "EMPATE" else "Loss"
+                            msg_mg = f"🔄 *Martingale Vela* acionado por {motivo}! (Passo {next_step}/{mg_steps})\nEntrando imediatamente com ${next_amount:.2f} em {symbol} ({direction})."
+                            asyncio.create_task(telegram_alert_cb(msg_mg)) 
+                            asyncio.create_task(self.place_order_and_monitor(
+                                symbol, direction, next_amount, duration, telegram_alert_cb, current_step=next_step
+                            ))
                         
                     elif mg_type == "Sinal":
                         motivo = "Empate" if status == "EMPATE" else "Loss"
