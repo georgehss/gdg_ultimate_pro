@@ -201,7 +201,7 @@ class TradingTelegramBot:
                 "Exemplos de formato:\n"
                 "▫️ *RSI:* `14, 70, 30` (Período, Sobrecompra, Sobrevenda)\n"
                 "▫️ *MA Cross:* `9, 21` (EMA Rápida, EMA Lenta)\n"
-                "▫️ *Engolfo MA:* `8` (Período da EMA)\n\n"
+                "▫️ *Price Action (Engolfo):* `8, 59, 200` (SMMA Curta, Média, Longa)\n\n"
                 "Digite os valores agora:"
             )
             keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')]]

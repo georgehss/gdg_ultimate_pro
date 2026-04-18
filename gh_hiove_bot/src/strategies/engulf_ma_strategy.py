@@ -89,7 +89,7 @@ class EngulfMAStrategy(BaseStrategy):
 
     async def analyze_market(self):
         
-        logger.info(f"[{self.name}] Analisando Price Action Pro + EMA {self.ma_period} + SMMA {self.long_ma_period} + RSI + ADX + Volume...")
+        logger.info(f"[{self.name}] Analisando Price Action Pro + SMMAs ({self.short_ma_period}/{self.medium_ma_period}/{self.long_ma_period}) + RSI + ADX + Volume...")
         
         limit_klines = max(150, self.long_ma_period + 50)
         klines = await self.broker.get_klines(symbol=self.symbol, interval=self.timeframe_str, limit=limit_klines)
