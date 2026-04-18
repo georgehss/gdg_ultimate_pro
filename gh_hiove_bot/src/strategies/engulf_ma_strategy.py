@@ -32,59 +32,60 @@ class EngulfMAStrategy(BaseStrategy):
         self.ma_entry_mode = "BREAK"
         
         if self.profile == "Conservador":
-            # Filtros de Rompimento
-            self.ma_period = 14
-            self.long_ma_period = 100
+            self.short_ma_period = 8
+            self.medium_ma_period = 59
+            self.long_ma_period = 200
             self.epsilon = 0.0001
             
-            # FILTROS INSTITUCIONAIS (Novos)
-            self.min_adx = 25               # Exige uma tendência fortíssima
-            self.volatility_mult = 1.0      # A vela tem de ter 100% (ou mais) do tamanho médio
-            self.rsi_pullback_buy = 50      # Preço tem de ter corrigido bastante (RSI < 50)
-            self.rsi_pullback_sell = 50     # Preço tem de ter corrigido bastante (RSI > 50)
-            self.volume_mult = 1.1          # Volume atual tem de ser 10% MAIOR que a vela anterior
+            self.min_adx = 23
+            self.volatility_mult = 1.0
+            self.rsi_pullback_buy = 60
+            self.rsi_pullback_sell = 40
+            self.volume_mult = 1.1       
             
         elif self.profile == "Agressivo":
-            # Filtros de Rompimento
-            self.ma_period = 5
-            self.long_ma_period = 21
+            self.short_ma_period = 5
+            self.medium_ma_period = 14
+            self.long_ma_period = 23
             self.epsilon = -0.0001
             
-            # FILTROS INSTITUCIONAIS (Novos)
-            self.min_adx = 15               # Aceita operar com tendência fraca/iniciando
-            self.volatility_mult = 0.5      # Aceita velas com metade do tamanho médio
-            self.rsi_pullback_buy = 65      # Aceita comprar mesmo que já esteja um pouco sobrecomprado
-            self.rsi_pullback_sell = 35     # Aceita vender mesmo que já esteja um pouco sobrevendido
-            self.volume_mult = 0.8          # Aceita entrar mesmo se o volume for 20% menor que o anterior
+            self.min_adx = 10         
+            self.volatility_mult = 0.5
+            self.rsi_pullback_buy = 70
+            self.rsi_pullback_sell = 30
+            self.volume_mult = 0.5
 
         elif self.profile == "Customizado" and self.custom_params:
-            self.ma_period = 8
-            self.long_ma_period = 59
+            # Valores base seguros
+            self.short_ma_period = 8
+            self.medium_ma_period = 59
+            self.long_ma_period = 200
             self.epsilon = 0.0
-            self.min_adx = 20               
-            self.volatility_mult = 0.8      
-            self.rsi_pullback_buy = 55      
-            self.rsi_pullback_sell = 45     
-            self.volume_mult = 1.0          
+            self.min_adx = 18
+            self.volatility_mult = 0.8
+            self.rsi_pullback_buy = 60
+            self.rsi_pullback_sell = 40
+            self.volume_mult = 1.0
 
-            try: # Ex: "8"
+            try: # Ex: "8, 59, 200"
                 valores = [int(v.strip()) for v in self.custom_params.split(',')]
-                if len(valores) >= 1: self.ma_period = valores[0]
+                if len(valores) >= 1: self.short_ma_period = valores[0]
+                if len(valores) >= 2: self.medium_ma_period = valores[1]
+                if len(valores) >= 3: self.long_ma_period = valores[2]
             except ValueError:
                 pass
             
-        else: # Balanceado (Mantém os valores exatos que antes estavam hardcoded)
-            # Filtros de Rompimento
-            self.ma_period = 8
-            self.long_ma_period = 59
+        else: # Balanceado (Padrão)
+            self.short_ma_period = 8
+            self.medium_ma_period = 59
+            self.long_ma_period = 200
             self.epsilon = 0.0
             
-            # FILTROS INSTITUCIONAIS (Novos)
-            self.min_adx = 20               # Tendência clara
-            self.volatility_mult = 0.8      # Vela com 80% do tamanho médio
-            self.rsi_pullback_buy = 55      # Respiro padrão
-            self.rsi_pullback_sell = 45     # Respiro padrão
-            self.volume_mult = 1.0          # Volume atual > Volume anterior
+            self.min_adx = 18
+            self.volatility_mult = 0.8
+            self.rsi_pullback_buy = 65
+            self.rsi_pullback_sell = 35
+            self.volume_mult = 0.8
 
     async def analyze_market(self):
         
@@ -107,9 +108,10 @@ class EngulfMAStrategy(BaseStrategy):
             # NOVO: 1. Converte a coluna de volume da corretora
             df['volume'] = pd.to_numeric(df['volume'])
             
-            # 1) Calcula os Indicadores Base
-            df['ema'] = ta.ema(df['closePrice'], length=self.ma_period)
-            df['smma_long'] = ta.rma(df['closePrice'], length=self.long_ma_period) 
+            # 1) Cálculo das 3 SMMAs (ta.rma é o equivalente à SMMA no pandas_ta)
+            df['smma_short'] = ta.rma(df['closePrice'], length=self.short_ma_period)
+            df['smma_medium'] = ta.rma(df['closePrice'], length=self.medium_ma_period)
+            df['smma_long'] = ta.rma(df['closePrice'], length=self.long_ma_period)
             df['rsi'] = ta.rsi(df['closePrice'], length=self.rsi_period)
             
             # NOVO: 2. Calcula o ADX para evitar lateralização
@@ -133,20 +135,22 @@ class EngulfMAStrategy(BaseStrategy):
             
             # Dados Vela 1 (Sinal / Recém Fechada)
             o1, c1, h1, l1 = df['openPrice'].iloc[idx1], df['closePrice'].iloc[idx1], df['highPrice'].iloc[idx1], df['lowPrice'].iloc[idx1]
-            ma1 = df['ema'].iloc[idx1]
+            
+            # NOVO: Puxa os dados das 3 SMMAs
+            smma_short1 = df['smma_short'].iloc[idx1]
+            smma_medium1 = df['smma_medium'].iloc[idx1]
             smma_long1 = df['smma_long'].iloc[idx1]
+            
             rsi1 = df['rsi'].iloc[idx1]
             size1 = df['candle_size'].iloc[idx1]
             avg_size1 = df['avg_size'].iloc[idx2] 
             
-            # NOVO: 3. Pega o volume e o ADX da vela de sinal
+            # 3. Pega o volume e o ADX da vela de sinal
             v1 = df['volume'].iloc[idx1]
             adx1 = df['adx'].iloc[idx1]
             
             # Dados Vela 2 (Anterior / Engolfada)
             o2, c2, h2, l2 = df['openPrice'].iloc[idx2], df['closePrice'].iloc[idx2], df['highPrice'].iloc[idx2], df['lowPrice'].iloc[idx2]
-            
-            # NOVO: 4. Pega o volume da vela anterior
             v2 = df['volume'].iloc[idx2]
             
             # 2) Leitura de Corpo e Pavios
@@ -162,16 +166,12 @@ class EngulfMAStrategy(BaseStrategy):
             bull2 = d2 > self.epsilon
             bear2 = d2 < -self.epsilon
             
-            # Filtro de Volatilidade: Usa o multiplicador do perfil
+            # Filtro de Volatilidade e Institucionais
             volatility_ok = size1 >= (avg_size1 * self.volatility_mult)
-            
-            # Filtro de Volume Institucional: Compara com o multiplicador do perfil
             volume_ok = v1 > (v2 * self.volume_mult) 
-            
-            # Filtro ADX: Usa o mínimo exigido pelo perfil
             trend_strength_ok = adx1 > self.min_adx 
             
-            # 3) Lógica dos Padrões Gráficos (Mantém-se igual)
+            # 3) Lógica dos Padrões Gráficos
             bullish_engulf = bull1 and bear2 and (o1 <= c2 + self.epsilon) and (c1 >= o2 - self.epsilon)
             bearish_engulf = bear1 and bull2 and (o1 >= c2 - self.epsilon) and (c1 <= o2 + self.epsilon)
             
@@ -181,22 +181,22 @@ class EngulfMAStrategy(BaseStrategy):
             bullish_pattern = "Engolfo de Alta" if bullish_engulf else ("Martelo" if is_hammer else None)
             bearish_pattern = "Engolfo de Baixa" if bearish_engulf else ("Estrela Cadente" if is_shooting_star else None)
 
-            # 4) Alinhamento Duplo de Tendência (Mantém-se igual)
-            trend_up = (c1 > smma_long1) and (ma1 > smma_long1)
-            trend_down = (c1 < smma_long1) and (ma1 < smma_long1)
+            # NOVO: 4) Alinhamento Triplo de Tendência (As 3 SMMAs alinhadas com o preço)
+            trend_up = (c1 > smma_long1) and (smma_medium1 > smma_long1) and (smma_short1 > smma_medium1)
+            trend_down = (c1 < smma_long1) and (smma_medium1 < smma_long1) and (smma_short1 < smma_medium1)
 
-            # 5) Lógica da Média Curta (Mantém-se igual)
+            # NOVO: 5) Lógica da Média Curta (Usa agora a SMMA Curta)
             ma_ok_buy = False
             ma_ok_sell = False
             
             if self.ma_entry_mode == "ABOVE_BELOW":
-                ma_ok_buy = c1 > ma1 + self.epsilon
-                ma_ok_sell = c1 < ma1 - self.epsilon
+                ma_ok_buy = c1 > smma_short1 + self.epsilon
+                ma_ok_sell = c1 < smma_short1 - self.epsilon
             else: 
-                ma_ok_buy = (l1 <= ma1 + self.epsilon) and (c1 > ma1 + self.epsilon)
-                ma_ok_sell = (h1 >= ma1 - self.epsilon) and (c1 < ma1 - self.epsilon)
+                ma_ok_buy = (l1 <= smma_short1 + self.epsilon) and (c1 > smma_short1 + self.epsilon)
+                ma_ok_sell = (h1 >= smma_short1 - self.epsilon) and (c1 < smma_short1 - self.epsilon)
                 
-            # 6) Filtro de Exaustão (RSI) - Agora é dinâmico!
+            # 6) Filtro de Exaustão (RSI)
             rsi_ok_buy = rsi1 < self.rsi_pullback_buy
             rsi_ok_sell = rsi1 > self.rsi_pullback_sell
             
