@@ -6,7 +6,7 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class RSIStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado"):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None):
         super().__init__(name=f"RSIPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
@@ -17,6 +17,7 @@ class RSIStrategy(BaseStrategy):
         else: self.timeframe_seconds = 60 # Padrão 1 minuto
         
         self.profile = profile
+        self.custom_params = custom_params
         
         # Aplica as configurações baseadas no perfil escolhido
         self._apply_profile_settings()
@@ -57,6 +58,29 @@ class RSIStrategy(BaseStrategy):
             self.volatility_mult = 0.4      # Aceita velas pequenas (40% do tamanho da média)
             self.volume_mult = 0.8          # Aceita entrar mesmo se o volume for 20% menor
             self.bb_std = 1.8               # Bandas mais estreitas (toca muito mais fácil)
+
+        elif self.profile == "Customizado" and self.custom_params:
+            # 1. Carrega os padrões do "Balanceado" por segurança (caso o utilizador não digite tudo)
+            self.rsi_period = 14
+            self.rsi_overbought = 70
+            self.rsi_oversold = 30
+            self.long_ma_period = 100
+            self.ema_period = 9
+            self.entry_mode = "CROSSBACK"
+            self.confirm_candle = True
+            self.min_adx = 20               
+            self.volatility_mult = 0.7      
+            self.volume_mult = 1.0          
+            self.bb_std = 2.0               
+
+            # 2. Substitui com os dados do utilizador (Ex: "14, 75, 25")
+            try:
+                valores = [int(v.strip()) for v in self.custom_params.split(',')]
+                if len(valores) >= 1: self.rsi_period = valores[0]
+                if len(valores) >= 2: self.rsi_overbought = valores[1]
+                if len(valores) >= 3: self.rsi_oversold = valores[2]
+            except ValueError:
+                pass # Se ele digitar letras, ignora e usa o padrão
 
         else: # Balanceado (Padrão Original)
             self.rsi_period = 14

@@ -1,6 +1,6 @@
 import logging, asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from core.database import save_user_config, load_user_config, get_session_profit
 from core.config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID
 
@@ -193,6 +193,18 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("⚙️ Customizado (Valores padrão originais)", callback_data='prof_Customizado')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')]
             ]
+
+        elif self.setup_step == "wait_custom_params":
+            text = (
+                "✍️ *Configuração Customizada*\n\n"
+                "Digite os parâmetros que deseja usar separados por vírgula.\n\n"
+                "Exemplos de formato:\n"
+                "▫️ *RSI:* `14, 70, 30` (Período, Sobrecompra, Sobrevenda)\n"
+                "▫️ *MA Cross:* `9, 21` (EMA Rápida, EMA Lenta)\n"
+                "▫️ *Engolfo MA:* `8` (Período da EMA)\n\n"
+                "Digite os valores agora:"
+            )
+            keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')]]
 
         elif self.setup_step == "timeframe":
             text = "📊 *Tempo de Análise (Timeframe)*\nQual o tempo gráfico das velas para o robô analisar?"
@@ -430,15 +442,18 @@ class TradingTelegramBot:
             elif step == 'consensus_strategies':
                 self.setup_step = 'strategy_type'
             elif step == 'assets':
-                # Se for live ou list, ele veio direto de 'mode'. Se for estratégia, veio de 'profile'
                 if self.user_config.get("mode") in ["live", "list"]:
                     self.setup_step = 'mode'
                 else:
-                    self.setup_step = 'profile'
+                    self.setup_step = 'timeframe' # Voltar de Ativos vai para Timeframe
             elif step == 'duration':
-                self.setup_step = 'timeframe'
+                self.setup_step = 'assets' # Voltar de Duração vai para Ativos
             elif step == 'timeframe':
-                self.setup_step = 'assets'
+                # Voltar de Timeframe vai para Customizado (se ativado) ou Perfil
+                if self.user_config.get("profile") == "Customizado":
+                    self.setup_step = 'wait_custom_params'
+                else:
+                    self.setup_step = 'profile'
             elif step == 'amount':
                 self.setup_step = 'duration'
             elif step == 'martingale_type':
@@ -521,7 +536,11 @@ class TradingTelegramBot:
         # NOVO PASSO: Perfil de Operação
         elif data.startswith('prof_'):
             self.user_config["profile"] = data.split('_')[1]
-            self.setup_step = "timeframe"
+            
+            if self.user_config["profile"] == "Customizado":
+                self.setup_step = "wait_custom_params"
+            else:
+                self.setup_step = "timeframe"
             
         # Passo 3: Ativos
         elif data.startswith('ast_'):
@@ -591,6 +610,15 @@ class TradingTelegramBot:
 
         # Atualiza o painel para o próximo passo (se não for o fim)
         await self.send_setup_step(query.message, is_edit=True)
+
+    async def text_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self.check_auth(update): return
+        
+        if self.setup_step == "wait_custom_params":
+            # Guarda o texto digitado (ex: "14, 80, 20")
+            self.user_config["custom_params"] = update.message.text.strip()
+            self.setup_step = "timeframe"
+            await self.send_setup_step(update.message, is_edit=False)
 
     # (Os métodos status_command, send_alert, start_polling e stop continuam iguais ao anterior)
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -708,7 +736,8 @@ class TradingTelegramBot:
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("stop", self.stop_command))
         self.app.add_handler(CommandHandler("status", self.status_command))
-        self.app.add_handler(CallbackQueryHandler(self.button_handler)) 
+        self.app.add_handler(CallbackQueryHandler(self.button_handler))
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.text_handler))
         logger.info("Bot do Telegram inicializado. Aguardando /start...")
         await self.app.initialize()
         await self.app.start()
@@ -729,11 +758,16 @@ class TradingTelegramBot:
             
             mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {self.user_config.get('martingale_multiplier', 0)}x"
 
+        # Cria uma string bonita para o perfil
+        perfil_exibicao = self.user_config.get('profile', 'Balanceado')
+        if perfil_exibicao == "Customizado" and self.user_config.get('custom_params'):
+            perfil_exibicao += f" ({self.user_config['custom_params']})"
+
         resumo = (
             f"🚀 *SISTEMA INICIANDO!*\n\n"
             f"▫️ Conta: {'DEMO 🟢' if self.user_config['is_demo'] else 'REAL 🔴'}\n"
             f"▫️ Modo: {self.user_config['mode'].upper().replace('_', ' ')}\n"
-            f"▫️ Perfil: {self.user_config.get('profile', 'Balanceado')}\n"
+            f"▫️ Perfil: {perfil_exibicao}\n"
             f"▫️ Análise Gráfica: {self.user_config.get('timeframe', '1m')}\n"
             f"▫️ Ativos: {', '.join(self.user_config['assets'])}\n"
             f"▫️ Tempo: {self.user_config['duration']}\n"

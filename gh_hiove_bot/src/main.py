@@ -85,7 +85,7 @@ async def run_session(tg_bot, global_stop_event):
 
     if config["mode"] in ["strat_rsi", "strategy"]:
         for ativo in config["assets"]:
-            strat = RSIStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido)
+            strat = RSIStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido, custom_params=config.get("custom_params"))
             strat.trade_amount, strat.trade_duration = config["amount"], config["duration"]
             manager.add_strategy(strat)
         strategy_task = asyncio.create_task(manager.start_all())
@@ -93,7 +93,7 @@ async def run_session(tg_bot, global_stop_event):
 
     elif config["mode"] == "strat_ma":
         for ativo in config["assets"]:
-            strat = MACrossStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido)
+            strat = MACrossStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido, custom_params=config.get("custom_params"))
             strat.trade_amount, strat.trade_duration = config["amount"], config["duration"]
             manager.add_strategy(strat)
         strategy_task = asyncio.create_task(manager.start_all())
@@ -101,7 +101,7 @@ async def run_session(tg_bot, global_stop_event):
 
     elif config["mode"] == "strat_engulf":
         for ativo in config["assets"]:
-            strat = EngulfMAStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido)
+            strat = EngulfMAStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido, custom_params=config.get("custom_params"))
             strat.trade_amount, strat.trade_duration = config["amount"], config["duration"]
             manager.add_strategy(strat)
         strategy_task = asyncio.create_task(manager.start_all())
@@ -119,6 +119,7 @@ async def run_session(tg_bot, global_stop_event):
                 symbol=ativo, 
                 timeframe=config.get("timeframe", "1m"), 
                 profile=perfil_escolhido,
+                custom_params=config.get("custom_params"),
                 active_strategies=ativas,            
                 min_votes_required=votos_necessarios 
             )

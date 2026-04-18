@@ -6,7 +6,7 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class MACrossStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado"):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None):
         super().__init__(name=f"MACrossPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
@@ -17,6 +17,7 @@ class MACrossStrategy(BaseStrategy):
         else: self.timeframe_seconds = 60 # Padrão 1 minuto
         
         self.profile = profile
+        self.custom_params = custom_params
         
         # Aplica as configurações baseadas no perfil escolhido
         self._apply_profile_settings()
@@ -61,6 +62,26 @@ class MACrossStrategy(BaseStrategy):
             self.volume_mult = 0.8          # Aceita entrar mesmo com volume 20% abaixo da média
             self.rsi_max_buy = 75           # Aceita comprar até à boca da zona de sobrecompra
             self.rsi_min_sell = 25          # Aceita vender mesmo bem perto da sobrevenda
+
+        elif self.profile == "Customizado" and self.custom_params:
+            self.fast_period = 9
+            self.slow_period = 21
+            self.long_ma_period = 100
+            self.cooldown_bars = 3
+            self.use_slope = True
+            self.use_atr_sep = True
+            self.atr_sep_mult = 0.15
+            self.min_adx = 20               
+            self.volume_mult = 1.0          
+            self.rsi_max_buy = 65           
+            self.rsi_min_sell = 35          
+
+            try: # Ex: "9, 21"
+                valores = [int(v.strip()) for v in self.custom_params.split(',')]
+                if len(valores) >= 1: self.fast_period = valores[0]
+                if len(valores) >= 2: self.slow_period = valores[1]
+            except ValueError:
+                pass
 
         else: # Balanceado (Padrão Original)
             self.fast_period = 9

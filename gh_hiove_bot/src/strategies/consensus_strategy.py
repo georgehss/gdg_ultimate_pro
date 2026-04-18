@@ -7,7 +7,7 @@ from .engulf_ma_strategy import EngulfMAStrategy
 logger = logging.getLogger(__name__)
 
 class ConsensusStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe="1m", min_votes_required=1, profile="Balanceado", active_strategies=None):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe="1m", min_votes_required=1, profile="Balanceado", active_strategies=None, custom_params=None):
         super().__init__(name=f"Consensus_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe_str = timeframe
@@ -35,17 +35,17 @@ class ConsensusStrategy(BaseStrategy):
         
         # Instancia dinamicamente apenas as estratégias selecionadas
         if "rsi" in self.active_strategies:
-            strat = RSIStrategy(broker, dummy_alert, symbol, timeframe, profile=profile)
+            strat = RSIStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=custom_params)
             self.strategies.append(strat)
             self.strat_names.append("RSI Pro")
             
         if "ma" in self.active_strategies:
-            strat = MACrossStrategy(broker, dummy_alert, symbol, timeframe, profile=profile)
+            strat = MACrossStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=custom_params)
             self.strategies.append(strat)
             self.strat_names.append("MA Cross Pro")
             
         if "engulf" in self.active_strategies:
-            strat = EngulfMAStrategy(broker, dummy_alert, symbol, timeframe, profile=profile)
+            strat = EngulfMAStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=custom_params)
             self.strategies.append(strat)
             self.strat_names.append("Price Action Pro")
         

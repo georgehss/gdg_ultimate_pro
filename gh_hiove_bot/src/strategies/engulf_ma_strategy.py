@@ -7,7 +7,7 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class EngulfMAStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado"):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None):
         super().__init__(name=f"PriceActionPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
         self.symbol = symbol
         self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
@@ -18,6 +18,7 @@ class EngulfMAStrategy(BaseStrategy):
         else: self.timeframe_seconds = 60 # Padrão 1 minuto
         
         self.profile = profile
+        self.custom_params = custom_params
         
         # Aplica as configurações baseadas no perfil escolhido
         self._apply_profile_settings()
@@ -55,6 +56,22 @@ class EngulfMAStrategy(BaseStrategy):
             self.rsi_pullback_buy = 65      # Aceita comprar mesmo que já esteja um pouco sobrecomprado
             self.rsi_pullback_sell = 35     # Aceita vender mesmo que já esteja um pouco sobrevendido
             self.volume_mult = 0.8          # Aceita entrar mesmo se o volume for 20% menor que o anterior
+
+        elif self.profile == "Customizado" and self.custom_params:
+            self.ma_period = 8
+            self.long_ma_period = 59
+            self.epsilon = 0.0
+            self.min_adx = 20               
+            self.volatility_mult = 0.8      
+            self.rsi_pullback_buy = 55      
+            self.rsi_pullback_sell = 45     
+            self.volume_mult = 1.0          
+
+            try: # Ex: "8"
+                valores = [int(v.strip()) for v in self.custom_params.split(',')]
+                if len(valores) >= 1: self.ma_period = valores[0]
+            except ValueError:
+                pass
             
         else: # Balanceado (Mantém os valores exatos que antes estavam hardcoded)
             # Filtros de Rompimento
