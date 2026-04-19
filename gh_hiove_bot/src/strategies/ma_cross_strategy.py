@@ -37,20 +37,20 @@ class MACrossStrategy(BaseStrategy):
             self.fast_period = 14
             self.slow_period = 50
             self.long_ma_period = 200
-            self.cooldown_bars = 5
+            self.cooldown_bars = 4
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
             self.use_slope = True           # Exige que a EMA lenta esteja apontada a favor
             self.use_atr_sep = True         # Exige que as EMAs se afastem de verdade
-            self.atr_sep_mult = 0.20        # Separação grande
-            self.min_adx = 25               # Tendência consolidada
+            self.atr_sep_mult = 0.18        # Separação grande
+            self.min_adx = 22               # Tendência consolidada
             self.volume_mult = 1.1          # Volume de cruzamento tem de ser 10% maior que a média
-            self.rsi_max_buy = 55           # Muito rigor: recusa comprar num topo (RSI < 55)
-            self.rsi_min_sell = 45          # Muito rigor: recusa vender num fundo (RSI > 45)
+            self.rsi_max_buy = 60           # Muito rigor: recusa comprar num topo (RSI < 55)
+            self.rsi_min_sell = 40          # Muito rigor: recusa vender num fundo (RSI > 45)
 
         elif self.profile == "Agressivo":
             self.fast_period = 5
-            self.slow_period = 13
+            self.slow_period = 14
             self.long_ma_period = 50
             self.cooldown_bars = 1
             
@@ -58,21 +58,21 @@ class MACrossStrategy(BaseStrategy):
             self.use_slope = False          # Ignora a inclinação (tenta apanhar reversões abruptas)
             self.use_atr_sep = False        # Ignora a separação perfeita (basta tocar)
             self.atr_sep_mult = 0.05        # (Não será usado se use_atr_sep for False)
-            self.min_adx = 15               # Aceita cruzamentos em mercados menos direcionais
-            self.volume_mult = 0.8          # Aceita entrar mesmo com volume 20% abaixo da média
-            self.rsi_max_buy = 75           # Aceita comprar até à boca da zona de sobrecompra
-            self.rsi_min_sell = 25          # Aceita vender mesmo bem perto da sobrevenda
+            self.min_adx = 12               # Aceita cruzamentos em mercados menos direcionais
+            self.volume_mult = 0.5          # Aceita entrar mesmo com volume 20% abaixo da média
+            self.rsi_max_buy = 70           # Aceita comprar até à boca da zona de sobrecompra
+            self.rsi_min_sell = 30          # Aceita vender mesmo bem perto da sobrevenda
 
         elif self.profile == "Customizado" and self.custom_params:
             self.fast_period = 9
             self.slow_period = 21
             self.long_ma_period = 100
-            self.cooldown_bars = 3
+            self.cooldown_bars = 2
             self.use_slope = True
             self.use_atr_sep = True
             self.atr_sep_mult = 0.15
-            self.min_adx = 20               
-            self.volume_mult = 1.0          
+            self.min_adx = 18               
+            self.volume_mult = 0.8          
             self.rsi_max_buy = 65           
             self.rsi_min_sell = 35          
 
@@ -87,14 +87,14 @@ class MACrossStrategy(BaseStrategy):
             self.fast_period = 9
             self.slow_period = 21
             self.long_ma_period = 100
-            self.cooldown_bars = 3
+            self.cooldown_bars = 2
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
             self.use_slope = True
             self.use_atr_sep = True
             self.atr_sep_mult = 0.15
-            self.min_adx = 20               # Padrão
-            self.volume_mult = 1.0          # Padrão (Volume tem de passar a SMA20)
+            self.min_adx = 18               # Padrão
+            self.volume_mult = 0.8          # Padrão (Volume tem de passar a SMA20)
             self.rsi_max_buy = 65           # Padrão
             self.rsi_min_sell = 35          # Padrão
 

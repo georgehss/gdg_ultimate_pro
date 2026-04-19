@@ -31,15 +31,15 @@ class RSIStrategy(BaseStrategy):
         """Define os parâmetros internos com base no perfil escolhido."""
         if self.profile == "Conservador":
             self.rsi_period = 14
-            self.rsi_overbought = 75
-            self.rsi_oversold = 25
+            self.rsi_overbought = 70
+            self.rsi_oversold = 30
             self.long_ma_period = 200
             self.ema_period = 9
             self.entry_mode = "CROSSBACK"
             self.confirm_candle = True
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 25               # Tendência forte obrigatória para operar
+            self.min_adx = 22               # Tendência forte obrigatória para operar
             self.volatility_mult = 1.0      # Vela tem que ter 100% ou mais da volatilidade média
             self.volume_mult = 1.1          # Volume de exaustão tem de ser 10% maior que a vela anterior
             self.bb_std = 2.5               # Exige que o preço fure Bandas de Bollinger extremamente largas
@@ -54,9 +54,9 @@ class RSIStrategy(BaseStrategy):
             self.confirm_candle = False
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 15               # Aceita operar mesmo se o mercado estiver morno
+            self.min_adx = 12               # Aceita operar mesmo se o mercado estiver morno
             self.volatility_mult = 0.4      # Aceita velas pequenas (40% do tamanho da média)
-            self.volume_mult = 0.8          # Aceita entrar mesmo se o volume for 20% menor
+            self.volume_mult = 0.6          # Aceita entrar mesmo se o volume for 20% menor
             self.bb_std = 1.8               # Bandas mais estreitas (toca muito mais fácil)
 
         elif self.profile == "Customizado" and self.custom_params:
@@ -68,9 +68,9 @@ class RSIStrategy(BaseStrategy):
             self.ema_period = 9
             self.entry_mode = "CROSSBACK"
             self.confirm_candle = True
-            self.min_adx = 20               
-            self.volatility_mult = 0.7      
-            self.volume_mult = 1.0          
+            self.min_adx = 18               
+            self.volatility_mult = 0.5      
+            self.volume_mult = 0.8          
             self.bb_std = 2.0               
 
             # 2. Substitui com os dados do utilizador (Ex: "14, 75, 25")
@@ -92,9 +92,9 @@ class RSIStrategy(BaseStrategy):
             self.confirm_candle = True
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 20               # Padrão
-            self.volatility_mult = 0.7      # Padrão
-            self.volume_mult = 1.0          # Padrão (v1 > v2)
+            self.min_adx = 18               # Padrão
+            self.volatility_mult = 0.5      # Padrão
+            self.volume_mult = 0.8          # Padrão (v1 > v2)
             self.bb_std = 2.0               # Padrão
 
     async def analyze_market(self):
