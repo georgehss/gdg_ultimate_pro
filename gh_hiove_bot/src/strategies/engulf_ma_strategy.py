@@ -37,6 +37,7 @@ class EngulfMAStrategy(BaseStrategy):
             self.long_ma_period = 200
             self.epsilon = 0.0001
             
+            # FILTROS INSTITUCIONAIS DINÂMICOS
             self.min_adx = 23
             self.volatility_mult = 1.0
             self.rsi_pullback_buy = 60
@@ -49,6 +50,7 @@ class EngulfMAStrategy(BaseStrategy):
             self.long_ma_period = 23
             self.epsilon = -0.0001
             
+            # FILTROS INSTITUCIONAIS DINÂMICOS
             self.min_adx = 10         
             self.volatility_mult = 0.5
             self.rsi_pullback_buy = 70
@@ -61,6 +63,8 @@ class EngulfMAStrategy(BaseStrategy):
             self.medium_ma_period = 59
             self.long_ma_period = 200
             self.epsilon = 0.0
+
+            # FILTROS INSTITUCIONAIS DINÂMICOS
             self.min_adx = 18
             self.volatility_mult = 0.8
             self.rsi_pullback_buy = 60
