@@ -68,10 +68,12 @@ class RSIStrategy(BaseStrategy):
             self.ema_period = 9
             self.entry_mode = "CROSSBACK"
             self.confirm_candle = True
-            self.min_adx = 18               
-            self.volatility_mult = 0.5      
-            self.volume_mult = 0.8          
-            self.bb_std = 2.0               
+
+            # FILTROS INSTITUCIONAIS DINÂMICOS
+            self.min_adx = 18               # Padrão para tendência clara, mas não tão exigente quanto o conservador
+            self.volatility_mult = 0.5      # Padrão para aceitar velas com pelo menos 50% do tamanho da média, mas o utilizador pode ajustar
+            self.volume_mult = 0.8          # Padrão para aceitar volume de exaustão 20% maior que a vela anterior
+            self.bb_std = 2.0               # Padrão para bandas de Bollinger
 
             # 2. Substitui com os dados do utilizador (Ex: "14, 75, 25")
             try:
