@@ -197,12 +197,16 @@ class TradingTelegramBot:
         elif self.setup_step == "wait_custom_params":
             text = (
                 "✍️ *Configuração Customizada*\n\n"
-                "Digite os parâmetros que deseja usar separados por vírgula.\n\n"
-                "Exemplos de formato:\n"
-                "▫️ *RSI:* `14, 70, 30` (Período, Sobrecompra, Sobrevenda)\n"
-                "▫️ *MA Cross:* `9, 21` (EMA Rápida, EMA Lenta)\n"
-                "▫️ *Price Action (Engolfo):* `8, 59, 200` (SMMA Curta, Média, Longa)\n\n"
-                "Digite os valores agora:"
+                "Digite os parâmetros que deseja usar separados por vírgula. "
+                "Pode digitar apenas os primeiros se quiser manter o resto como padrão.\n\n"
+                "📌 *Ordem de Inserção:*\n\n"
+                "▫️ *RSI:* `RSI Per, O.Bought, O.Sold, SMMA Long, EMA Curta, ADX Min, Vol Mult, Volm Mult, BB Std`\n"
+                "👉 *Ex:* `14, 70, 30, 100, 9, 20, 0.7, 1.0, 2.0`\n\n"
+                "▫️ *MA Cross:* `EMA Rápida, EMA Lenta, SMMA Long, Cooldown, ATR Mult, ADX Min, Volm Mult, RSI Max Compra, RSI Min Venda`\n"
+                "👉 *Ex:* `9, 21, 100, 3, 0.15, 20, 1.0, 65, 35`\n\n"
+                "▫️ *Engolfo MA:* `SMMA Curta, SMMA Média, SMMA Long, ADX Min, Vol Mult, RSI Pullback C, RSI Pullback V, Volm Mult`\n"
+                "👉 *Ex:* `8, 59, 200, 18, 0.8, 60, 40, 1.0`\n\n"
+                "Escreva os seus valores agora:"
             )
             keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')]]
 

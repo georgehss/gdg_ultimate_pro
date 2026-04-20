@@ -60,7 +60,7 @@ class RSIStrategy(BaseStrategy):
             self.bb_std = 1.8               # Bandas mais estreitas (toca muito mais fácil)
 
         elif self.profile == "Customizado" and self.custom_params:
-            # 1. Carrega os padrões do "Balanceado" por segurança (caso o utilizador não digite tudo)
+            # Valores base seguros
             self.rsi_period = 14
             self.rsi_overbought = 70
             self.rsi_oversold = 30
@@ -68,21 +68,26 @@ class RSIStrategy(BaseStrategy):
             self.ema_period = 9
             self.entry_mode = "CROSSBACK"
             self.confirm_candle = True
-
+            
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 18               # Padrão para tendência clara, mas não tão exigente quanto o conservador
-            self.volatility_mult = 0.5      # Padrão para aceitar velas com pelo menos 50% do tamanho da média, mas o utilizador pode ajustar
-            self.volume_mult = 0.8          # Padrão para aceitar volume de exaustão 20% maior que a vela anterior
-            self.bb_std = 2.0               # Padrão para bandas de Bollinger
+            self.min_adx = 20               
+            self.volatility_mult = 0.7      
+            self.volume_mult = 1.0          
+            self.bb_std = 2.0               
 
-            # 2. Substitui com os dados do utilizador (Ex: "14, 75, 25")
             try:
-                valores = [int(v.strip()) for v in self.custom_params.split(',')]
-                if len(valores) >= 1: self.rsi_period = valores[0]
-                if len(valores) >= 2: self.rsi_overbought = valores[1]
-                if len(valores) >= 3: self.rsi_oversold = valores[2]
+                valores = [v.strip() for v in self.custom_params.split(',')]
+                if len(valores) >= 1: self.rsi_period = int(valores[0])
+                if len(valores) >= 2: self.rsi_overbought = int(valores[1])
+                if len(valores) >= 3: self.rsi_oversold = int(valores[2])
+                if len(valores) >= 4: self.long_ma_period = int(valores[3])
+                if len(valores) >= 5: self.ema_period = int(valores[4])
+                if len(valores) >= 6: self.min_adx = int(valores[5])
+                if len(valores) >= 7: self.volatility_mult = float(valores[6])
+                if len(valores) >= 8: self.volume_mult = float(valores[7])
+                if len(valores) >= 9: self.bb_std = float(valores[8])
             except ValueError:
-                pass # Se ele digitar letras, ignora e usa o padrão
+                pass
 
         else: # Balanceado (Padrão Original)
             self.rsi_period = 14

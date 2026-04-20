@@ -63,7 +63,7 @@ class EngulfMAStrategy(BaseStrategy):
             self.medium_ma_period = 59
             self.long_ma_period = 200
             self.epsilon = 0.0
-
+            
             # FILTROS INSTITUCIONAIS DINÂMICOS
             self.min_adx = 18
             self.volatility_mult = 0.8
@@ -71,13 +71,19 @@ class EngulfMAStrategy(BaseStrategy):
             self.rsi_pullback_sell = 40
             self.volume_mult = 1.0
 
-            try: # Ex: "8, 59, 200"
-                valores = [int(v.strip()) for v in self.custom_params.split(',')]
-                if len(valores) >= 1: self.short_ma_period = valores[0]
-                if len(valores) >= 2: self.medium_ma_period = valores[1]
-                if len(valores) >= 3: self.long_ma_period = valores[2]
+            try:
+                # Divide a string e converte consoante o tipo de dado esperado
+                valores = [v.strip() for v in self.custom_params.split(',')]
+                if len(valores) >= 1: self.short_ma_period = int(valores[0])
+                if len(valores) >= 2: self.medium_ma_period = int(valores[1])
+                if len(valores) >= 3: self.long_ma_period = int(valores[2])
+                if len(valores) >= 4: self.min_adx = int(valores[3])
+                if len(valores) >= 5: self.volatility_mult = float(valores[4])
+                if len(valores) >= 6: self.rsi_pullback_buy = int(valores[5])
+                if len(valores) >= 7: self.rsi_pullback_sell = int(valores[6])
+                if len(valores) >= 8: self.volume_mult = float(valores[7])
             except ValueError:
-                pass
+                pass # Em caso de erro de digitação, cai de pé nos valores base
             
         else: # Balanceado (Padrão)
             self.short_ma_period = 8

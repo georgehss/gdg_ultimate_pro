@@ -45,8 +45,8 @@ class MACrossStrategy(BaseStrategy):
             self.atr_sep_mult = 0.18        # Separação grande
             self.min_adx = 22               # Tendência consolidada
             self.volume_mult = 1.1          # Volume de cruzamento tem de ser 10% maior que a média
-            self.rsi_max_buy = 60           # Muito rigor: recusa comprar num topo (RSI < 55)
-            self.rsi_min_sell = 40          # Muito rigor: recusa vender num fundo (RSI > 45)
+            self.rsi_max_buy = 60           # Muito rigor: recusa comprar num topo (RSI < 60)
+            self.rsi_min_sell = 40          # Muito rigor: recusa vender num fundo (RSI > 40)
 
         elif self.profile == "Agressivo":
             self.fast_period = 5
@@ -64,22 +64,32 @@ class MACrossStrategy(BaseStrategy):
             self.rsi_min_sell = 30          # Aceita vender mesmo bem perto da sobrevenda
 
         elif self.profile == "Customizado" and self.custom_params:
+            # Valores base seguros
             self.fast_period = 9
             self.slow_period = 21
             self.long_ma_period = 100
-            self.cooldown_bars = 2
+            self.cooldown_bars = 3
             self.use_slope = True
             self.use_atr_sep = True
+            
+            # FILTROS INSTITUCIONAIS DINÂMICOS
             self.atr_sep_mult = 0.15
-            self.min_adx = 18               
-            self.volume_mult = 0.8          
+            self.min_adx = 20               
+            self.volume_mult = 1.0          
             self.rsi_max_buy = 65           
             self.rsi_min_sell = 35          
 
-            try: # Ex: "9, 21"
-                valores = [int(v.strip()) for v in self.custom_params.split(',')]
-                if len(valores) >= 1: self.fast_period = valores[0]
-                if len(valores) >= 2: self.slow_period = valores[1]
+            try:
+                valores = [v.strip() for v in self.custom_params.split(',')]
+                if len(valores) >= 1: self.fast_period = int(valores[0])
+                if len(valores) >= 2: self.slow_period = int(valores[1])
+                if len(valores) >= 3: self.long_ma_period = int(valores[2])
+                if len(valores) >= 4: self.cooldown_bars = int(valores[3])
+                if len(valores) >= 5: self.atr_sep_mult = float(valores[4])
+                if len(valores) >= 6: self.min_adx = int(valores[5])
+                if len(valores) >= 7: self.volume_mult = float(valores[6])
+                if len(valores) >= 8: self.rsi_max_buy = int(valores[7])
+                if len(valores) >= 9: self.rsi_min_sell = int(valores[8])
             except ValueError:
                 pass
 
