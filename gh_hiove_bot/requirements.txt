@@ -1,9 +1,0 @@
-aiohttp
-python-dotenv
-python-telegram-bot
-pandas
-pandas-ta
-playwright
-fastapi
-uvicorn
-aiosqlite
