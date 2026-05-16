@@ -239,19 +239,29 @@ class HioveBrokerAPI:
             # ==========================================
             # 3. FORMATAR E ENVIAR MENSAGEM
             # ==========================================
-            if status == "WIN": emoji = "🟢 WIN"
-            elif status == "LOSS": emoji = "🔴 LOSS"
-            elif status == "EMPATE": emoji = "⚪ EMPATE"
-            else: emoji = "⚠️ AVISO"
+            is_martingale = current_step > 0
+
+            # Diferenciação de emojis e status baseada no passo atual
+            if status == "WIN": 
+                emoji = "🟢 WIN NO MG" if is_martingale else "🟢 WIN"
+            elif status == "LOSS": 
+                emoji = "🔴 LOSS NO MG" if is_martingale else "🔴 LOSS"
+            elif status == "EMPATE": 
+                emoji = "⚪ EMPATE NO MG" if is_martingale else "⚪ EMPATE"
+            else: 
+                emoji = "⚠️ AVISO"
 
             dir_icon = "🈯️ COMPRA" if direction.upper() == "BUY" else "🈲 VENDA"
             
             # Mostra qual foi o horário da entrada baseada no tipo (Normal ou MG)
-            linha_hora = f"▫️ Horário do Sinal: {hora_sinal}" if current_step == 0 else f"▫️ Horário do MG: {hora_sinal}"
+            linha_hora = f"▫️ Horário do MG: {hora_sinal}" if is_martingale else f"▫️ Horário do Sinal: {hora_sinal}"
             hora_fechamento = datetime.now().strftime("%H:%M:%S")
 
+            # Atualiza também o cabeçalho principal da mensagem
+            cabecalho = f"*Resultado do Martingale (Passo {current_step})!*" if is_martingale else "*Resultado da Operação!*"
+
             msg = (
-                f"*Resultado da Operação!*\n"
+                f"{cabecalho}\n"
                 f"{emoji}\n"
                 f"▫️ Ativo: {symbol}\n"
                 f"▫️ Direção: {dir_icon}\n"
