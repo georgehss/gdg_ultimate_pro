@@ -32,44 +32,44 @@ class EngulfMAStrategy(BaseStrategy):
         self.ma_entry_mode = "BREAK"
         
         if self.profile == "Conservador":
-            self.short_ma_period = 8
-            self.medium_ma_period = 59
-            self.long_ma_period = 200
-            self.epsilon = 0.0001
+            self.short_ma_period = 8        # Período da SMMA curta (Aceleração do preço)
+            self.medium_ma_period = 59      # Período da SMMA média (Tendência intermediária)
+            self.long_ma_period = 200       # Período da SMMA longa (Macrotendência)
+            self.epsilon = 0.0001           # Tolerância rigorosa (exige engolfo perfeito ou superior)
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 23
-            self.volatility_mult = 1.0
-            self.rsi_pullback_buy = 60
-            self.rsi_pullback_sell = 40
-            self.volume_mult = 1.1       
+            self.min_adx = 25               # Exige forte direcionalidade no movimento
+            self.volatility_mult = 1.0      # Volatilidade da vela de sinal deve ser >= 100% da média
+            self.rsi_pullback_buy = 60      # Trava a compra se o RSI já estiver acima de 60 (quase sobrecomprado)
+            self.rsi_pullback_sell = 40     # Trava a venda se o RSI já estiver abaixo de 40 (quase sobrevendido)
+            self.volume_mult = 1.1          # Exige que o volume da vela de sinal seja 10% MAIOR que a anterior
             
         elif self.profile == "Agressivo":
-            self.short_ma_period = 5
-            self.medium_ma_period = 14
-            self.long_ma_period = 23
-            self.epsilon = -0.0001
+            self.short_ma_period = 8        # Período da SMMA curta
+            self.medium_ma_period = 59      # Período da SMMA média
+            self.long_ma_period = 200       # Período da SMMA longa
+            self.epsilon = -0.0001          # Tolerância solta (aceita engolfos com pequenas sobras/imperfeitos)
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 10         
-            self.volatility_mult = 0.5
-            self.rsi_pullback_buy = 70
-            self.rsi_pullback_sell = 30
-            self.volume_mult = 0.5
+            self.min_adx = 10               # Opera mesmo em mercado quase lateral
+            self.volatility_mult = 0.5      # Aceita padrões de reversão de corpo pequeno (50% da média)
+            self.rsi_pullback_buy = 70      # Compra até encostar na zona de sobrecompra extrema
+            self.rsi_pullback_sell = 30     # Vende até encostar na zona de sobrevenda extrema
+            self.volume_mult = 0.5          # Aceita entrar com metade do volume da vela anterior
 
         elif self.profile == "Customizado" and self.custom_params:
             # Valores base seguros
-            self.short_ma_period = 8
-            self.medium_ma_period = 59
-            self.long_ma_period = 200
-            self.epsilon = 0.0
+            self.short_ma_period = 8        # Período da SMMA curta
+            self.medium_ma_period = 59      # Período da SMMA média
+            self.long_ma_period = 200       # Período da SMMA longa
+            self.epsilon = 0.0              # Sem tolerância extra (Exige cobertura exata 1 para 1)
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 18
-            self.volatility_mult = 0.8
-            self.rsi_pullback_buy = 60
-            self.rsi_pullback_sell = 40
-            self.volume_mult = 1.0
+            self.min_adx = 18               # Nível mínimo de força de tendência (ADX)
+            self.volatility_mult = 0.8      # A vela deve ter no mínimo 80% do tamanho médio
+            self.rsi_pullback_buy = 60      # Teto máximo do RSI para validar uma COMPRA
+            self.rsi_pullback_sell = 40     # Piso mínimo do RSI para validar uma VENDA
+            self.volume_mult = 1.0          # O volume de engolfo deve ser no mínimo igual ao volume engolfado
 
             try:
                 # Divide a string e converte consoante o tipo de dado esperado
@@ -86,16 +86,17 @@ class EngulfMAStrategy(BaseStrategy):
                 pass # Em caso de erro de digitação, cai de pé nos valores base
             
         else: # Balanceado (Padrão)
-            self.short_ma_period = 8
-            self.medium_ma_period = 59
-            self.long_ma_period = 200
-            self.epsilon = 0.0
+            self.short_ma_period = 8        # SMMA curta padrão (Aceleração)
+            self.medium_ma_period = 59      # SMMA média padrão (Direção intermediária)
+            self.long_ma_period = 200       # SMMA longa padrão (Macro tendência institucional)
+            self.epsilon = 0.0              # Encaixe matemático perfeito exigido para engolfo
             
-            self.min_adx = 18
-            self.volatility_mult = 0.8
-            self.rsi_pullback_buy = 65
-            self.rsi_pullback_sell = 35
-            self.volume_mult = 0.8
+            # FILTROS INSTITUCIONAIS DINÂMICOS
+            self.min_adx = 20               # Filtra falsos rompimentos em consolidação estreita
+            self.volatility_mult = 1.0      # Exige uma vela de sinal com volatilidade forte ou normal
+            self.rsi_pullback_buy = 65      # Aceita compra com margem leve de respiro antes da sobrecompra
+            self.rsi_pullback_sell = 35     # Aceita venda com margem leve de respiro antes da sobrevenda
+            self.volume_mult = 1.0          # Valida que há capital suficiente empurrando a reversão
 
     async def analyze_market(self):
         

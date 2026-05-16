@@ -29,55 +29,56 @@ class MACrossStrategy(BaseStrategy):
 
     def _apply_profile_settings(self):
         # Filtros de Período Básicos
-        self.rsi_period = 14
-        self.atr_period = 14
-        self.slope_lookback = 3
+        self.rsi_period = 14                # Período usado para leitura do Momentum
+        self.atr_period = 14                # Período usado para leitura da Volatilidade
+        self.slope_lookback = 3             # Quantidade de velas no passado para verificar a inclinação da Média
 
         if self.profile == "Conservador":
-            self.fast_period = 14
-            self.slow_period = 50
-            self.long_ma_period = 200
-            self.cooldown_bars = 4
+            self.fast_period = 5            # Período da EMA Rápida (A que vai cruzar)
+            self.slow_period = 14           # Período da EMA Lenta (A que serve de base do cruzamento)
+            self.long_ma_period = 59        # Filtro SMMA para ditar de qual lado está a macrotendência
+        
+            self.cooldown_bars = 4          # Aguarda 4 velas após um sinal para evitar lateralizações ruidosas
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
             self.use_slope = True           # Exige que a EMA lenta esteja apontada a favor
-            self.use_atr_sep = True         # Exige que as EMAs se afastem de verdade
-            self.atr_sep_mult = 0.18        # Separação grande
-            self.min_adx = 22               # Tendência consolidada
-            self.volume_mult = 1.1          # Volume de cruzamento tem de ser 10% maior que a média
+            self.use_atr_sep = True         # Exige que as EMAs se afastem de verdade após cruzar
+            self.atr_sep_mult = 0.18        # Separação grande obrigatória baseada no ATR
+            self.min_adx = 25               # Tendência consolidada
+            self.volume_mult = 1.1          # Volume de cruzamento tem de ser 10% maior que a média da SMA20 de volume
             self.rsi_max_buy = 60           # Muito rigor: recusa comprar num topo (RSI < 60)
             self.rsi_min_sell = 40          # Muito rigor: recusa vender num fundo (RSI > 40)
 
         elif self.profile == "Agressivo":
-            self.fast_period = 5
-            self.slow_period = 14
-            self.long_ma_period = 50
-            self.cooldown_bars = 1
+            self.fast_period = 5            # Período da EMA Rápida
+            self.slow_period = 14           # Período da EMA Lenta
+            self.long_ma_period = 59        # Filtro SMMA de macrotendência
+            self.cooldown_bars = 1          # Quase sem intervalo de segurança entre sinais
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.use_slope = False          # Ignora a inclinação (tenta apanhar reversões abruptas)
-            self.use_atr_sep = False        # Ignora a separação perfeita (basta tocar)
+            self.use_slope = False          # Ignora a inclinação (tenta apanhar reversões abruptas em "V")
+            self.use_atr_sep = False        # Ignora a separação perfeita (basta tocar/cruzar de leve)
             self.atr_sep_mult = 0.05        # (Não será usado se use_atr_sep for False)
-            self.min_adx = 12               # Aceita cruzamentos em mercados menos direcionais
-            self.volume_mult = 0.5          # Aceita entrar mesmo com volume 20% abaixo da média
-            self.rsi_max_buy = 70           # Aceita comprar até à boca da zona de sobrecompra
-            self.rsi_min_sell = 30          # Aceita vender mesmo bem perto da sobrevenda
+            self.min_adx = 12               # Aceita cruzamentos em mercados menos direcionais/mais curtos
+            self.volume_mult = 0.5          # Aceita entrar mesmo com volume 50% abaixo da média de 20 períodos
+            self.rsi_max_buy = 70           # Aceita comprar até encostar na zona de sobrecompra
+            self.rsi_min_sell = 30          # Aceita vender mesmo encostado na sobrevenda
 
         elif self.profile == "Customizado" and self.custom_params:
             # Valores base seguros
-            self.fast_period = 9
-            self.slow_period = 21
-            self.long_ma_period = 100
-            self.cooldown_bars = 3
-            self.use_slope = True
-            self.use_atr_sep = True
+            self.fast_period = 5            # EMA Rápida
+            self.slow_period = 14           # EMA Lenta base
+            self.long_ma_period = 59        # Filtro SMMA de macrotendência
+            self.cooldown_bars = 3          # Velas de "geladeira" para abafar ruído pós-sinal
+            self.use_slope = True           # Verifica se há inclinação confirmando a direção
+            self.use_atr_sep = True         # Exige distanciamento após o cruzamento
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.atr_sep_mult = 0.15
-            self.min_adx = 20               
-            self.volume_mult = 1.0          
-            self.rsi_max_buy = 65           
-            self.rsi_min_sell = 35          
+            self.atr_sep_mult = 0.15        # Multiplicador do ATR que define a separação mínima exigida
+            self.min_adx = 20               # Nível mínimo de ADX (Força da tendência)
+            self.volume_mult = 1.0          # O volume da vela de cruzamento deve ser igual ou maior à média (SMA20)
+            self.rsi_max_buy = 65           # Limite superior de Momentum para permitir compra
+            self.rsi_min_sell = 35          # Limite inferior de Momentum para permitir venda
 
             try:
                 valores = [v.strip() for v in self.custom_params.split(',')]
@@ -94,19 +95,19 @@ class MACrossStrategy(BaseStrategy):
                 pass
 
         else: # Balanceado (Padrão Original)
-            self.fast_period = 9
-            self.slow_period = 21
-            self.long_ma_period = 100
-            self.cooldown_bars = 2
+            self.fast_period = 5            # EMA Rápida clássica de scalp
+            self.slow_period = 14           # EMA Lenta de confirmação
+            self.long_ma_period = 59        # SMMA de divisão de maré
+            self.cooldown_bars = 2          # Respiro moderado entre os sinais
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.use_slope = True
-            self.use_atr_sep = True
-            self.atr_sep_mult = 0.15
-            self.min_adx = 18               # Padrão
-            self.volume_mult = 0.8          # Padrão (Volume tem de passar a SMA20)
-            self.rsi_max_buy = 65           # Padrão
-            self.rsi_min_sell = 35          # Padrão
+            self.use_slope = True           # Filtra cruzamentos mortos onde a média não aponta a direção
+            self.use_atr_sep = True         # Filtra falsos rompimentos raspando nas médias
+            self.atr_sep_mult = 0.15        # Espaçamento moderado baseado na volatilidade da hora
+            self.min_adx = 20               # Filtra momentos de extrema lentidão/paralisação do mercado
+            self.volume_mult = 0.8          # Aceita entrar se o volume estiver pelo menos a 80% do normal
+            self.rsi_max_buy = 65           # Corta compras atrasadas na boca da exaustão
+            self.rsi_min_sell = 35          # Corta vendas atrasadas quando todos já venderam
 
     async def analyze_market(self):
         # NOVO: Atualizado o log

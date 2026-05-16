@@ -30,50 +30,52 @@ class RSIStrategy(BaseStrategy):
     def _apply_profile_settings(self):
         """Define os parâmetros internos com base no perfil escolhido."""
         if self.profile == "Conservador":
-            self.rsi_period = 14
-            self.rsi_overbought = 70
-            self.rsi_oversold = 30
-            self.long_ma_period = 200
-            self.ema_period = 9
-            self.entry_mode = "CROSSBACK"
-            self.confirm_candle = True
+            # Parâmetros de Período Básicos
+            self.rsi_period = 14            # Período clássico do RSI para leitura sólida de exaustão
+            self.rsi_overbought = 75        # Nível rigoroso de sobrecompra
+            self.rsi_oversold = 25          # Nível rigoroso de sobrevenda
+            self.long_ma_period = 200       # SMMA ultra-longa para garantir a proteção da macrotendência
+            self.ema_period = 9             # EMA rápida para confirmar a direção do micro-movimento
+            self.entry_mode = "CROSSBACK"   # Mais seguro: aguarda o RSI cruzar de volta para dentro da zona extrema
+            self.confirm_candle = True      # Exige que a vela de entrada confirme a reversão (cor a favor da ordem)
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 22               # Tendência forte obrigatória para operar
-            self.volatility_mult = 1.0      # Vela tem que ter 100% ou mais da volatilidade média
-            self.volume_mult = 1.1          # Volume de exaustão tem de ser 10% maior que a vela anterior
-            self.bb_std = 2.5               # Exige que o preço fure Bandas de Bollinger extremamente largas
+            self.min_adx = 22               # Tendência forte obrigatória para autorizar a operação
+            self.volatility_mult = 1.0      # A vela tem de ter 100% ou mais da volatilidade média recente
+            self.volume_mult = 1.1          # O volume de exaustão tem de ser 10% maior que a vela anterior
+            self.bb_std = 2.5               # Exige que o preço perfure Bandas de Bollinger extremamente largas
 
         elif self.profile == "Agressivo":
-            self.rsi_period = 9
-            self.rsi_overbought = 65
-            self.rsi_oversold = 35
-            self.long_ma_period = 50
-            self.ema_period = 5
-            self.entry_mode = "TOUCH"
-            self.confirm_candle = False
+            # Parâmetros de Período Básicos
+            self.rsi_period = 9             # RSI mais rápido e sensível aos movimentos curtos do mercado
+            self.rsi_overbought = 70        # Nível de sobrecompra mais acessível (toca mais vezes)
+            self.rsi_oversold = 30          # Nível de sobrevenda mais acessível (toca mais vezes)
+            self.long_ma_period = 50        # SMMA mais curta para apanhar microtendências
+            self.ema_period = 5             # EMA ultra-rápida para gatilhos antecipados
+            self.entry_mode = "TOUCH"       # Risco maior: entra imediatamente ao tocar na linha do RSI (não espera voltar)
+            self.confirm_candle = False     # Não exige mudança de cor da vela (entrada o mais rápida possível)
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 12               # Aceita operar mesmo se o mercado estiver morno
-            self.volatility_mult = 0.4      # Aceita velas pequenas (40% do tamanho da média)
-            self.volume_mult = 0.6          # Aceita entrar mesmo se o volume for 20% menor
-            self.bb_std = 1.8               # Bandas mais estreitas (toca muito mais fácil)
+            self.min_adx = 12               # Aceita operar mesmo se o mercado estiver mais morno/lateral
+            self.volatility_mult = 0.4      # Aceita velas de reversão pequenas (apenas 40% do tamanho da média)
+            self.volume_mult = 0.6          # Aceita entrar mesmo se o volume for 40% menor que o anterior
+            self.bb_std = 1.8               # Bandas de Bollinger mais estreitas (são perfuradas mais facilmente)
 
         elif self.profile == "Customizado" and self.custom_params:
-            # Valores base seguros
-            self.rsi_period = 14
-            self.rsi_overbought = 70
-            self.rsi_oversold = 30
-            self.long_ma_period = 100
-            self.ema_period = 9
-            self.entry_mode = "CROSSBACK"
-            self.confirm_candle = True
+            # Valores base seguros (Caso o utilizador não preencha tudo)
+            self.rsi_period = 14            # Período de cálculo do RSI
+            self.rsi_overbought = 70        # Linha superior (Sobrecompra)
+            self.rsi_oversold = 30          # Linha inferior (Sobrevenda)
+            self.long_ma_period = 100       # Período da SMMA para filtro de macrotendência
+            self.ema_period = 9             # Período da EMA curta para direção do micro-movimento
+            self.entry_mode = "CROSSBACK"   # 'TOUCH' (Tocou, entra) ou 'CROSSBACK' (Espera cruzar de volta)
+            self.confirm_candle = True      # Exige que a cor da vela confirme a direção da operação
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 20               
-            self.volatility_mult = 0.7      
-            self.volume_mult = 1.0          
-            self.bb_std = 2.0               
+            self.min_adx = 20               # Exige uma tendência direcional moderada/forte ativa
+            self.volatility_mult = 0.7      # A vela deve ter no mínimo 70% da volatilidade média recente
+            self.volume_mult = 1.0          # O volume da reversão deve ser pelo menos igual ao da vela anterior
+            self.bb_std = 2.0               # Multiplicador de desvio padrão das Bandas de Bollinger
 
             try:
                 valores = [v.strip() for v in self.custom_params.split(',')]
@@ -90,19 +92,20 @@ class RSIStrategy(BaseStrategy):
                 pass
 
         else: # Balanceado (Padrão Original)
-            self.rsi_period = 14
-            self.rsi_overbought = 70
-            self.rsi_oversold = 30
-            self.long_ma_period = 100
-            self.ema_period = 9
-            self.entry_mode = "CROSSBACK"
-            self.confirm_candle = True
+            # Parâmetros de Período Básicos
+            self.rsi_period = 14            # Período de cálculo do RSI padrão
+            self.rsi_overbought = 70        # Linha superior clássica (Sobrecompra)
+            self.rsi_oversold = 30          # Linha inferior clássica (Sobrevenda)
+            self.long_ma_period = 100       # SMMA de 100 períodos para definir a tendência principal
+            self.ema_period = 9             # EMA rápida para confirmar movimento a favor do trade
+            self.entry_mode = "CROSSBACK"   # Entrada mais segura aguardando o retorno do cruzamento
+            self.confirm_candle = True      # Exige cor da vela alinhada com a entrada (Verde p/ Compra, Vermelha p/ Venda)
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 18               # Padrão
-            self.volatility_mult = 0.5      # Padrão
-            self.volume_mult = 0.8          # Padrão (v1 > v2)
-            self.bb_std = 2.0               # Padrão
+            self.min_adx = 18               # Exige mercado a sair de consolidação (leve tendência)
+            self.volatility_mult = 0.5      # Aceita velas com metade do corpo da média recente
+            self.volume_mult = 0.8          # Permite entrar se o volume for até 20% menor que o anterior
+            self.bb_std = 2.0               # Desvio padrão clássico das Bandas de Bollinger
 
     async def analyze_market(self):
         # NOVO: Atualizado o log para refletir os novos indicadores
