@@ -10,8 +10,8 @@ __pycache__/
 *.pyo
 
 # Variáveis de ambiente (se usar no futuro)
-*.env
-*.venv
+/*.env
+/*.venv
 .env
 .venv/
 src/__pycache__/
