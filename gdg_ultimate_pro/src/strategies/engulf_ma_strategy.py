@@ -7,8 +7,9 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class EngulfMAStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None, active_filters=None):
         super().__init__(name=f"PriceActionPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
+        self.active_filters = active_filters or {}
         self.symbol = symbol
         self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
         
@@ -177,10 +178,14 @@ class EngulfMAStrategy(BaseStrategy):
             bull2 = d2 > self.epsilon
             bear2 = d2 < -self.epsilon
             
+            use_volume = self.active_filters.get("volume", True)
+            use_adx = self.active_filters.get("adx", True)
+            use_trend = self.active_filters.get("trend", True)
+
             # Filtro de Volatilidade e Institucionais
             volatility_ok = size1 >= (avg_size1 * self.volatility_mult)
-            volume_ok = v1 > (v2 * self.volume_mult) 
-            trend_strength_ok = adx1 > self.min_adx 
+            volume_ok = (v1 > (v2 * self.volume_mult)) if use_volume else True
+            trend_strength_ok = (adx1 > self.min_adx) if use_adx else True
             
             # 3) Lógica dos Padrões Gráficos
             bullish_engulf = bull1 and bear2 and (o1 <= c2 + self.epsilon) and (c1 >= o2 - self.epsilon)
@@ -192,9 +197,9 @@ class EngulfMAStrategy(BaseStrategy):
             bullish_pattern = "Engolfo de Alta" if bullish_engulf else ("Martelo" if is_hammer else None)
             bearish_pattern = "Engolfo de Baixa" if bearish_engulf else ("Estrela Cadente" if is_shooting_star else None)
 
-            # NOVO: 4) Alinhamento Triplo de Tendência (As 3 SMMAs alinhadas com o preço)
-            trend_up = (c1 > smma_long1) and (smma_medium1 > smma_long1) and (smma_short1 > smma_medium1)
-            trend_down = (c1 < smma_long1) and (smma_medium1 < smma_long1) and (smma_short1 < smma_medium1)
+            # 4) Alinhamento Triplo de Tendência (As 3 SMMAs alinhadas com o preço)
+            trend_up = ((c1 > smma_long1) and (smma_medium1 > smma_long1) and (smma_short1 > smma_medium1)) if use_trend else True
+            trend_down = ((c1 < smma_long1) and (smma_medium1 < smma_long1) and (smma_short1 < smma_medium1)) if use_trend else True
 
             # NOVO: 5) Lógica da Média Curta (Usa agora a SMMA Curta)
             ma_ok_buy = False

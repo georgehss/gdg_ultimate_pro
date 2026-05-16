@@ -6,8 +6,9 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class MACrossStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None, active_filters=None):
         super().__init__(name=f"MACrossPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
+        self.active_filters = active_filters or {}
         self.symbol = symbol
         self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
         
@@ -170,12 +171,19 @@ class MACrossStrategy(BaseStrategy):
             v1 = df['volume'].iloc[last_closed]
             vol_sma1 = df['vol_sma'].iloc[last_closed]
             
+            # LÊ AS CONFIGURAÇÕES DOS FILTROS DO TELEGRAM
+            use_atr = self.active_filters.get("atr", self.use_atr_sep)
+            use_slope = self.active_filters.get("slope", self.use_slope)
+            use_volume = self.active_filters.get("volume", True)
+            use_adx = self.active_filters.get("adx", True)
+            use_trend = self.active_filters.get("trend", True)
+
             # Lógica Base de Cruzamento
             cross_up = (f2 <= s2) and (f1 > s1)
             cross_down = (f2 >= s2) and (f1 < s1)
 
             # Filtro 1: Separação por ATR
-            if (cross_up or cross_down) and self.use_atr_sep:
+            if (cross_up or cross_down) and use_atr:
                 atr_val = df['atr'].iloc[last_closed]
                 separation = abs(f1 - s1)
                 min_sep = self.atr_sep_mult * atr_val
@@ -185,7 +193,7 @@ class MACrossStrategy(BaseStrategy):
                     logger.debug(f"[{self.name}] Bloqueado por falta de separação ATR.")
 
             # Filtro 2: Confirmação por Inclinação (Slope)
-            if (cross_up or cross_down) and self.use_slope:
+            if (cross_up or cross_down) and use_slope:
                 s_past = df['ema_slow'].iloc[last_closed - self.slope_lookback]
                 slope = s1 - s_past
                 
@@ -201,7 +209,10 @@ class MACrossStrategy(BaseStrategy):
             # NOVO: Filtro de Ignição (Volume e Ação de Preço) Dinâmico
             candle_ok_buy = (c1 > o1)
             candle_ok_sell = (c1 < o1)
-            volume_ok = v1 > (vol_sma1 * self.volume_mult) # DINÂMICO
+            volume_ok = (v1 > (vol_sma1 * self.volume_mult)) if use_volume else True
+            
+            # NOVO: Filtro de ADX (Força da Tendência) Dinâmico
+            trend_strength_ok = (adx1 > self.min_adx) if use_adx else True
             
             if cross_up and not (candle_ok_buy and volume_ok):
                 cross_up = False
@@ -211,20 +222,9 @@ class MACrossStrategy(BaseStrategy):
                 cross_down = False
                 logger.debug(f"[{self.name}] SELL bloqueado: Falta de volume de ignição ou vela contrária.")
 
-            # NOVO: Filtro de ADX (Força da Tendência) Dinâmico
-            trend_strength_ok = adx1 > self.min_adx # DINÂMICO
-            
-            if cross_up and not trend_strength_ok:
-                cross_up = False
-                logger.debug(f"[{self.name}] BUY bloqueado: ADX fraco ({adx1:.1f}) indicando lateralização.")
-                
-            if cross_down and not trend_strength_ok:
-                cross_down = False
-                logger.debug(f"[{self.name}] SELL bloqueado: ADX fraco ({adx1:.1f}) indicando lateralização.")
-
             # Filtro 3: Alinhamento de Macrotendência (SMMA)
-            trend_up = (c1 > smma1) and (f1 > smma1) and (s1 > smma1)
-            trend_down = (c1 < smma1) and (f1 < smma1) and (s1 < smma1)
+            trend_up = ((c1 > smma1) and (f1 > smma1) and (s1 > smma1)) if use_trend else True
+            trend_down = ((c1 < smma1) and (f1 < smma1) and (s1 < smma1)) if use_trend else True
             
             if cross_up and not trend_up:
                 cross_up = False

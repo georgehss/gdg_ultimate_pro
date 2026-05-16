@@ -6,8 +6,9 @@ from .base_strategy import BaseStrategy
 logger = logging.getLogger(__name__)
 
 class RSIStrategy(BaseStrategy):
-    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None):
+    def __init__(self, broker, telegram_alert_cb, symbol="ETHUSDT", timeframe=60, profile="Balanceado", custom_params=None, active_filters=None):
         super().__init__(name=f"RSIPro_{symbol}", broker=broker, telegram_alert_cb=telegram_alert_cb)
+        self.active_filters = active_filters or {}
         self.symbol = symbol
         self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
         
@@ -195,28 +196,30 @@ class RSIStrategy(BaseStrategy):
                 rsi_buy_signal = rsi1 <= self.rsi_oversold
                 rsi_sell_signal = rsi1 >= self.rsi_overbought
 
-            # NOVO: 4) Validação Extrema (Bandas de Bollinger + Volume + ADX)
-            # A vela atual ou a anterior tem de ter furado as Bandas para confirmar exaustão
-            bb_ok_buy = (l1 <= bbl1) or (l2 <= bbl2)
-            bb_ok_sell = (h1 >= bbu1) or (h2 >= bbu2)
-            
-            volume_ok = v1 > v2 # Confirma defesa institucional na vela de reversão
-            trend_strength_ok = adx1 > 20 # Tem de haver tendência clara para o respiro voltar
+            # LÊ AS CONFIGURAÇÕES DOS FILTROS (Se não existir, assume True para segurança)
+            use_bb = self.active_filters.get("bb", True)
+            use_volume = self.active_filters.get("volume", True)
+            use_adx = self.active_filters.get("adx", True)
+            use_trend = self.active_filters.get("trend", True)
+
+            # 4) Validação Extrema (Bandas de Bollinger + Volume + ADX)
+            bb_ok_buy = ((l1 <= bbl1) or (l2 <= bbl2)) if use_bb else True
+            bb_ok_sell = ((h1 >= bbu1) or (h2 >= bbu2)) if use_bb else True
             
             # 5) Confirmação da Vela e Volatilidade
             candle_ok_buy = (c1 > o1) if self.confirm_candle else True
             candle_ok_sell = (c1 < o1) if self.confirm_candle else True
-            volatility_ok = body1 >= (avg_body1 * self.volatility_mult) # DINÂMICO
+            volatility_ok = body1 >= (avg_body1 * self.volatility_mult) 
 
             # Filtros Extras Dinâmicos
-            volume_ok = v1 > (v2 * self.volume_mult) # DINÂMICO
-            trend_strength_ok = adx1 > self.min_adx  # DINÂMICO
+            volume_ok = (v1 > (v2 * self.volume_mult)) if use_volume else True
+            trend_strength_ok = (adx1 > self.min_adx) if use_adx else True
 
             # 6) Filtro Institucional (Macrotendência)
-            trend_up = ema1 > smma1
-            trend_down = ema1 < smma1
+            trend_up = (ema1 > smma1) if use_trend else True
+            trend_down = (ema1 < smma1) if use_trend else True
 
-            # 7) Confluência de Ouro Suprema
+            # 7) Confluência de Ouro Suprema (o resto continua igual)
             is_buy = rsi_buy_signal and candle_ok_buy and volatility_ok and trend_up and bb_ok_buy and volume_ok and trend_strength_ok
             is_sell = rsi_sell_signal and candle_ok_sell and volatility_ok and trend_down and bb_ok_sell and volume_ok and trend_strength_ok
             

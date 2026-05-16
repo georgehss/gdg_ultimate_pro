@@ -22,7 +22,8 @@ class TradingTelegramBot:
             "mode": "strategy",
             "active_strategies": ["rsi", "ma", "engulf"],
             "min_votes_required": 2,
-            "profile": "Balanceado", 
+            "profile": "Balanceado",
+            "active_filters": {"adx": True, "volume": True, "trend": True, "bb": True, "atr": True, "slope": True}, 
             "assets": [],
             "timeframe": "1m",     
             "duration": "01:00",
@@ -203,6 +204,26 @@ class TradingTelegramBot:
                 "Escreva os seus valores agora:"
             )
             keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')]]
+
+        elif self.setup_step == "filters_menu":
+            text = "🎛️ *Filtros Institucionais*\nAtive ou desative os filtros de segurança.\nClique para alterar (✅ = Ligado / ❌ = Desligado) e depois em Continuar:"
+            
+            # Pega o estado atual dos filtros
+            f = self.user_config.setdefault("active_filters", {"adx": True, "volume": True, "trend": True, "bb": True, "atr": True, "slope": True})
+            
+            btn_adx = "✅ ADX (Força)" if f["adx"] else "❌ ADX (Força)"
+            btn_vol = "✅ Volume" if f["volume"] else "❌ Volume"
+            btn_trend = "✅ Macro Tendência" if f["trend"] else "❌ Macro Tendência"
+            btn_bb = "✅ Bollinger (RSI)" if f["bb"] else "❌ Bollinger (RSI)"
+            btn_atr = "✅ Separação ATR" if f["atr"] else "❌ Separação ATR"
+            btn_slope = "✅ Inclinação MA" if f["slope"] else "❌ Inclinação MA"
+
+            keyboard = [
+                [InlineKeyboardButton(btn_adx, callback_data='flt_adx'), InlineKeyboardButton(btn_vol, callback_data='flt_volume')],
+                [InlineKeyboardButton(btn_trend, callback_data='flt_trend'), InlineKeyboardButton(btn_bb, callback_data='flt_bb')],
+                [InlineKeyboardButton(btn_atr, callback_data='flt_atr'), InlineKeyboardButton(btn_slope, callback_data='flt_slope')],
+                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_filters_menu'), InlineKeyboardButton("➡️ Continuar", callback_data='flt_done')]
+            ]
 
         elif self.setup_step == "timeframe":
             text = "📊 *Tempo de Análise (Timeframe)*\nQual o tempo gráfico das velas para o robô analisar?"
@@ -427,6 +448,8 @@ class TradingTelegramBot:
             elif step == 'duration':
                 self.setup_step = 'assets' 
             elif step == 'timeframe':
+                self.setup_step = 'filters_menu' 
+            elif step == 'filters_menu':
                 if self.user_config.get("profile") == "Customizado":
                     self.setup_step = 'wait_custom_params'
                 else:
@@ -501,11 +524,19 @@ class TradingTelegramBot:
                 
         elif data.startswith('prof_'):
             self.user_config["profile"] = data.split('_')[1]
-            
             if self.user_config["profile"] == "Customizado":
                 self.setup_step = "wait_custom_params"
             else:
+                self.setup_step = "filters_menu"
+
+        elif data.startswith('flt_'):
+            comando = data.replace('flt_', '')
+            if comando == 'done':
                 self.setup_step = "timeframe"
+            else:
+                # Inverte o valor do botão clicado (True vira False, False vira True)
+                self.user_config["active_filters"][comando] = not self.user_config["active_filters"][comando]
+                # Não muda o setup_step, a tela será recarregada no mesmo lugar
             
         elif data.startswith('ast_'):
             asset = data.replace('ast_', '')
@@ -573,7 +604,7 @@ class TradingTelegramBot:
         
         if self.setup_step == "wait_custom_params":
             self.user_config["custom_params"] = update.message.text.strip()
-            self.setup_step = "timeframe"
+            self.setup_step = "filters_menu" # <-- MUDE ISTO (antes ia pro timeframe)
             await self.send_setup_step(update.message, is_edit=False)
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
