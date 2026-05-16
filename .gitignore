@@ -12,5 +12,9 @@ __pycache__/
 # Variáveis de ambiente (se usar no futuro)
 *.env
 *.venv
-env
-venv/
+.env
+.venv/
+src/__pycache__/
+src/*.pyc
+src/*.pyo
+src/logs/
