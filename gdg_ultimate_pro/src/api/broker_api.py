@@ -181,7 +181,7 @@ class HioveBrokerAPI:
             logger.error(msg_erro.replace('*', ''))
             await telegram_alert_cb(msg_erro)
 
-    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A", hora_sinal: str = "", saldo_inicial: float = 0.0):
+    async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A", hora_sinal: str = "", saldo_inicial: float = 0.0, accumulated_loss: float = 0.0):
         try:
             """Espera o tempo calculado matematicamente, lê o histórico e calcula o lucro líquido real"""
             
@@ -284,42 +284,62 @@ class HioveBrokerAPI:
                 # Limpa a gaveta do ativo por segurança caso estivesse no modo 'Ativo'
                 self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
                 
-            # Se for LOSS, ou se for EMPATE DENTRO DO MARTINGALE (current_step > 0):
+            # Se for LOSS, ou EMPATE DENTRO DO MG:
             elif (status == "LOSS" or (status == "EMPATE" and current_step > 0)) and mg_type != "Nenhum":
                 if current_step < mg_steps:
                     next_step = current_step + 1
-                    next_amount = amount * mg_mult
+                    
+                    # === LÓGICA HÍBRIDA (CONSERVADOR VS TRADICIONAL) ===
+                    novo_prejuizo = accumulated_loss + amount
+                    mg_mult = self.user_config.get("martingale_multiplier", 2.0)
+                    
+                    if mg_mult == "Conservador":
+                        # Modo de recuperação estrita (Sem lucro)
+                        payout_decimal = 0.85
+                        try:
+                            if payout != "N/A":
+                                payout_decimal = float(payout.replace('%', '').strip()) / 100.0
+                        except: pass
+                        if payout_decimal < 0.1: payout_decimal = 0.85
+                        
+                        next_amount = round(novo_prejuizo / payout_decimal, 2)
+                        texto_modo = "Conservador"
+                    else:
+                        # Modo tradicional (Multiplicando a aposta anterior)
+                        next_amount = round(amount * float(mg_mult), 2)
+                        texto_modo = f"{mg_mult}x"
+                    # ====================================================
 
                     if mg_type == "Vela":
                         if cancelar_mg_vela:
-                            # Evita entrar na vela com 15+ segundos de atraso
-                            msg_mg = f"⚠️ *Martingale Vela Cancelado* em {symbol}!\nO resultado demorou muito a carregar na corretora e perdemos a abertura exata da próxima vela. A mão voltará ao valor inicial para proteger o capital."
+                            msg_mg = f"⚠️ *Martingale Vela Cancelado* em {symbol}!\nO resultado demorou muito a carregar. A mão voltará ao inicial."
                             asyncio.create_task(telegram_alert_cb(msg_mg))
-                            self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
+                            self.martingale_state[symbol] = {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0}
                         else:
                             motivo = "Empate" if status == "EMPATE" else "Loss"
-                            msg_mg = f"🔄 *Martingale Vela* acionado por {motivo}! (Passo {next_step}/{mg_steps})\nEntrando imediatamente com ${next_amount:.2f} em {symbol} ({direction})."
+                            msg_mg = f"🔄 *Martingale Vela* acionado por {motivo}! (Passo {next_step}/{mg_steps})\nModo: {texto_modo} | Entrando com ${next_amount:.2f} em {symbol}."
                             asyncio.create_task(telegram_alert_cb(msg_mg)) 
+                            
+                            # PASSA O NOVO PREJUÍZO PARA A PRÓXIMA ENTRADA
                             asyncio.create_task(self.place_order_and_monitor(
-                                symbol, direction, next_amount, duration, telegram_alert_cb, current_step=next_step
+                                symbol, direction, next_amount, duration, telegram_alert_cb, current_step=next_step, accumulated_loss=novo_prejuizo
                             ))
                         
                     elif mg_type == "Sinal":
                         motivo = "Empate" if status == "EMPATE" else "Loss"
                         
-                        # VERIFICA O MODO PARA SALVAR O MG
                         if mg_signal_mode == "Global":
-                            self.martingale_queue.append({'step': next_step, 'next_amount': next_amount})
-                            msg_mg = f"🔄 *Martingale Sinal (Global)* na fila após {motivo} em {symbol} (Passo {next_step}/{mg_steps}).\nExistem {len(self.martingale_queue)} recuperações pendentes."
+                            self.martingale_queue.append({'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo})
+                            msg_mg = f"🔄 *Martingale Sinal (Global)* na fila. Prejuízo de ${novo_prejuizo:.2f}. Próxima entrada será de ${next_amount:.2f}."
                         else:
-                            self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount}
-                            msg_mg = f"🔄 *Martingale Sinal (Ativo)* preparado após {motivo} em {symbol} (Passo {next_step}/{mg_steps}).\nO próximo sinal apenas de {symbol} entrará com ${next_amount:.2f}."
+                            self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo}
+                            msg_mg = f"🔄 *Martingale Sinal (Ativo)* preparado. Próximo sinal em {symbol} entrará com ${next_amount:.2f} ({texto_modo})."
                             
                         await telegram_alert_cb(msg_mg)
                 else:
                     msg_mg = f"⚠️ *Martingale Finalizado* após loss em {symbol}. Limite de {mg_steps} passos batido."
                     await telegram_alert_cb(msg_mg)
-                    self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
+                    self.martingale_state[symbol] = {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0}
 
             # ==========================================
             # 4. VERIFICAÇÃO IMEDIATA (STOP LOSS / TAKE PROFIT)

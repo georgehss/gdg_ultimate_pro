@@ -19,7 +19,7 @@ class WebhookServer:
         self.martingale_state = {} # Guarda em que passo do MG cada ativo está
 
 
-    async def _execute_and_monitor(self, symbol, direction, amount, duration, current_step=0):
+    async def _execute_and_monitor(self, symbol, direction, amount, duration, current_step=0, accumulated_loss=0.0):
         
         # Lê os limites configurados pelo utilizador no Telegram
         tp = self.user_config.get("take_profit", 50.0)
@@ -29,12 +29,13 @@ class WebhookServer:
         # LÓGICA DO MARTINGALE ANTES DE ENTRAR
         # ==========================================
         mg_type = self.user_config.get("martingale_type", "Nenhum")
-        state = self.martingale_state.get(symbol, {'step': 0, 'next_amount': amount})
+        state = self.martingale_state.get(symbol, {'step': 0, 'next_amount': amount, 'accumulated_loss': 0.0})
         
         # Se for modo Sinal, for o 1º sinal vindo do MT5 e existir um passo guardado, substituímos o valor
         if mg_type == "Sinal" and current_step == 0 and state['step'] > 0:
             amount = state['next_amount']
             current_step = state['step']
+            accumulated_loss = state.get('accumulated_loss', 0.0)
             msg = f"🔄 Aplicando Martingale Sinal (Passo {current_step}) para {symbol}: Novo valor ${amount:.2f}"
             logger.info(msg)
             await self.telegram_bot.send_alert(msg)
@@ -59,14 +60,18 @@ class WebhookServer:
 
         """Executa a ordem e agenda a verificação do resultado pelo Histórico"""
         
-        # Grava o horário do sinal do MT5 ou do MG
         hora_sinal_mt5 = datetime.now().strftime("%H:%M:%S")
         
         # 1. Executa a ordem
         resultado = await self.scraper.place_order(symbol, direction, amount)
         
+        # DECLARAÇÃO DO PAYOUT AQUI PARA NÃO DAR ERRO MAIS ABAIXO
+        payout_str = "85%"
+        
         if resultado and "id" in resultado:
             order_id = resultado["id"]
+            payout_str = str(resultado.get("payout", "85%")) # Atualiza com o valor real se existir
+            
             await log_trade(symbol, direction, amount, duration, "ABERTA", order_id)
             
             agora = datetime.now()
@@ -80,20 +85,16 @@ class WebhookServer:
             logger.info(f"⏳ Ordem colocada. A aguardar {segundos_espera}s sincronizados com o relógio da corretora...")
             await asyncio.sleep(segundos_espera)
             
-            # 3. O robô vai na aba de Histórico ver qual foi o resultado, PASSANDO A HORA
+            # 3. Verifica o resultado
             status, lucro = await self.scraper.check_trade_result(symbol, amount, hora_sinal_mt5)
             
-            # 4. Atualiza o banco de dados e avisa no Telegram
+            # 4. Atualiza DB
             await update_trade_result(order_id, status, lucro)
             
-            if status == "WIN":
-                emoji = "🟢 WIN"
-            elif status == "LOSS":
-                emoji = "🔴 LOSS"
-            elif status == "EMPATE":
-                emoji = "⚪ EMPATE"
-            else:
-                emoji = "⚠️ AVISO"
+            if status == "WIN": emoji = "🟢 WIN"
+            elif status == "LOSS": emoji = "🔴 LOSS"
+            elif status == "EMPATE": emoji = "⚪ EMPATE"
+            else: emoji = "⚠️ AVISO"
 
             hora_fecho = datetime.now().strftime("%H:%M:%S")
             tipo_entrada = "Sinal" if current_step == 0 else f"Martingale (Passo {current_step})"
@@ -113,33 +114,49 @@ class WebhookServer:
             # AÇÃO DE MARTINGALE PÓS-RESULTADO
             # ==========================================
             mg_steps = self.user_config.get("martingale_steps", 0)
-            mg_mult = self.user_config.get("martingale_multiplier", 2.0)
 
             if status in ["WIN", "EMPATE"]:
-                self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
+                self.martingale_state[symbol] = {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0}
                 
             elif status == "LOSS" and mg_type != "Nenhum":
                 if current_step < mg_steps:
                     next_step = current_step + 1
-                    next_amount = amount * mg_mult
+                    
+                    # === LÓGICA HÍBRIDA (CONSERVADOR VS TRADICIONAL) ===
+                    novo_prejuizo = accumulated_loss + amount
+                    mg_mult = self.user_config.get("martingale_multiplier", 2.0)
+                    
+                    if mg_mult == "Conservador":
+                        payout_decimal = 0.85
+                        try:
+                            if payout_str != "N/A":
+                                payout_decimal = float(payout_str.replace('%', '').strip()) / 100.0
+                        except: pass
+                        if payout_decimal < 0.1: payout_decimal = 0.85
+                        
+                        next_amount = round(novo_prejuizo / payout_decimal, 2)
+                        texto_modo = "Conservador"
+                    else:
+                        next_amount = round(amount * float(mg_mult), 2)
+                        texto_modo = f"{mg_mult}x"
+                    # ====================================================
 
                     if mg_type == "Vela":
-                        msg_mg = f"🔄 *Martingale Vela* acionado! (Passo {next_step}/{mg_steps})\nEntrando imediatamente com ${next_amount:.2f} em {symbol} ({direction})."
+                        msg_mg = f"🔄 *Martingale Vela* acionado! (Passo {next_step}/{mg_steps})\nModo: {texto_modo} | Entrando com ${next_amount:.2f} em {symbol}."
                         await self.telegram_bot.send_alert(msg_mg)
-                        # Chama a si mesmo imediatamente para pegar a próxima vela sem esperar o MT5
+                        
                         asyncio.create_task(self._execute_and_monitor(
-                            symbol, direction, next_amount, duration, current_step=next_step
+                            symbol, direction, next_amount, duration, current_step=next_step, accumulated_loss=novo_prejuizo
                         ))
                         
                     elif mg_type == "Sinal":
-                        # Guarda na memória para o próximo sinal que o MT5 enviar
-                        self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount}
-                        msg_mg = f"🔄 *Martingale Sinal* preparado (Passo {next_step}/{mg_steps}).\nO próximo sinal do MT5 em {symbol} entrará pesando ${next_amount:.2f}."
+                        self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo}
+                        msg_mg = f"🔄 *Martingale Sinal* preparado. Prejuízo de ${novo_prejuizo:.2f}. Próximo sinal será de ${next_amount:.2f} ({texto_modo})."
                         await self.telegram_bot.send_alert(msg_mg)
                 else:
-                    msg_mg = f"⚠️ *Martingale Finalizado* em {symbol}. Limite de {mg_steps} passos batido. Retornando ao valor normal."
+                    msg_mg = f"⚠️ *Martingale Finalizado* em {symbol}. Limite de {mg_steps} passos batido. Retornando ao normal."
                     await self.telegram_bot.send_alert(msg_mg)
-                    self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
+                    self.martingale_state[symbol] = {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0}
             
         else:
             await log_trade(symbol, direction, amount, duration, "FALHOU", None)

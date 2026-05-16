@@ -288,6 +288,7 @@ class TradingTelegramBot:
         elif self.setup_step == "martingale_multiplier":
             text = "✖️ *Multiplicador*\nQual o fator de multiplicação de banca do MG?"
             keyboard = [
+                [InlineKeyboardButton("🛡️ Conservador (Apenas Recupera)", callback_data='mgmult_Conservador')],
                 [InlineKeyboardButton("1.0 x", callback_data='mgmult_1.0'),
                  InlineKeyboardButton("1.2 x", callback_data='mgmult_1.2'),
                  InlineKeyboardButton("1.5 x", callback_data='mgmult_1.5')],
@@ -598,7 +599,11 @@ class TradingTelegramBot:
 
         # Passo 8: Martingale Multiplier
         elif data.startswith('mgmult_'):
-            self.user_config["martingale_multiplier"] = float(data.split('_')[1])
+            mult_value = data.split('_')[1]
+            if mult_value == "Conservador":
+                self.user_config["martingale_multiplier"] = "Conservador"
+            else:
+                self.user_config["martingale_multiplier"] = float(mult_value)
             self.setup_step = "take_profit"
             
         # Passo 9: Take Profit
@@ -658,7 +663,11 @@ class TradingTelegramBot:
             # Se for Sinal, adiciona a tag (Global) ou (Ativo) ao lado do nome
             modo_str = f" ({self.user_config.get('martingale_signal_mode', 'Global')})" if self.user_config['martingale_type'] == "Sinal" else ""
             
-            mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {self.user_config.get('martingale_multiplier', 0)}x"
+            mult = self.user_config.get('martingale_multiplier', 0)
+            if mult == "Conservador":
+                mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | Conservador"
+            else:
+                mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {mult}x"
 
         # Formata a lista de estratégias ativas
         if self.manager and self.manager.strategies:
@@ -793,7 +802,11 @@ class TradingTelegramBot:
             # Se for Sinal, adiciona a tag (Global) ou (Ativo) ao lado do nome
             modo_str = f" ({self.user_config.get('martingale_signal_mode', 'Global')})" if self.user_config['martingale_type'] == "Sinal" else ""
             
-            mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {self.user_config.get('martingale_multiplier', 0)}x"
+            mult = self.user_config.get('martingale_multiplier', 0)
+            if mult == "Conservador":
+                mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | Conservador"
+            else:
+                mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {mult}x"
 
         # Cria uma string bonita para o perfil
         perfil_exibicao = self.user_config.get('profile', 'Balanceado')
