@@ -18,7 +18,7 @@ class HioveScraper:
         self.playwright = None
         self.contexts = {} # Dicionário para guardar a JANELA exclusiva de cada ativo
         self.pages = {} # Dicionário para guardar a aba exclusiva de cada ativo
-        self.active_payouts = {} # 🚀 NOVO: Memória para guardar o payout de cada ativo
+        self.active_payouts = {} # Memória para guardar o payout de cada ativo
         self.asset_configs = {} # Guarda a configuração de tempo/valor de cada ativo
         self.last_trade_times = {} # Memória para não ler o mesmo horário de operação duas vezes
         self.keep_alive_task = None # Guarda a tarefa anti-inatividade

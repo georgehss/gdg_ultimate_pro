@@ -5,7 +5,6 @@ from datetime import datetime
 from core.config import WEBHOOK_TOKEN 
 from core.database import log_trade, update_trade_result, get_session_profit
 
-
 logger = logging.getLogger(__name__)
 
 class WebhookServer:
@@ -16,12 +15,10 @@ class WebhookServer:
         self.app = web.Application()
         self.app.router.add_post('/sinal', self.handle_signal)
         self.runner = None
-        self.martingale_state = {} # Guarda em que passo do MG cada ativo está
-
+        self.martingale_state = {} 
 
     async def _execute_and_monitor(self, symbol, direction, amount, duration, current_step=0, accumulated_loss=0.0):
         
-        # Lê os limites configurados pelo utilizador no Telegram
         tp = self.user_config.get("take_profit", 50.0)
         sl = self.user_config.get("stop_loss", -20.0)
 
@@ -31,7 +28,6 @@ class WebhookServer:
         mg_type = self.user_config.get("martingale_type", "Nenhum")
         state = self.martingale_state.get(symbol, {'step': 0, 'next_amount': amount, 'accumulated_loss': 0.0})
         
-        # Se for modo Sinal, for o 1º sinal vindo do MT5 e existir um passo guardado, substituímos o valor
         if mg_type == "Sinal" and current_step == 0 and state['step'] > 0:
             amount = state['next_amount']
             current_step = state['step']
@@ -56,21 +52,16 @@ class WebhookServer:
             logger.warning(msg.replace('*', '').replace('\n', ' | '))
             await self.telegram_bot.send_alert(msg)
             return None
-        # ==========================================
-
-        """Executa a ordem e agenda a verificação do resultado pelo Histórico"""
         
         hora_sinal_mt5 = datetime.now().strftime("%H:%M:%S")
         
-        # 1. Executa a ordem
         resultado = await self.scraper.place_order(symbol, direction, amount)
         
-        # DECLARAÇÃO DO PAYOUT AQUI PARA NÃO DAR ERRO MAIS ABAIXO
         payout_str = "85%"
         
         if resultado and "id" in resultado:
             order_id = resultado["id"]
-            payout_str = str(resultado.get("payout", "85%")) # Atualiza com o valor real se existir
+            payout_str = str(resultado.get("payout", "85%")) 
             
             await log_trade(symbol, direction, amount, duration, "ABERTA", order_id)
             
@@ -85,10 +76,8 @@ class WebhookServer:
             logger.info(f"⏳ Ordem colocada. A aguardar {segundos_espera}s sincronizados com o relógio da corretora...")
             await asyncio.sleep(segundos_espera)
             
-            # 3. Verifica o resultado
             status, lucro = await self.scraper.check_trade_result(symbol, amount, hora_sinal_mt5)
             
-            # 4. Atualiza DB
             await update_trade_result(order_id, status, lucro)
             
             if status == "WIN": emoji = "🟢 WIN"
@@ -122,7 +111,6 @@ class WebhookServer:
                 if current_step < mg_steps:
                     next_step = current_step + 1
                     
-                    # === LÓGICA HÍBRIDA (CONSERVADOR VS TRADICIONAL) ===
                     novo_prejuizo = accumulated_loss + amount
                     mg_mult = self.user_config.get("martingale_multiplier", 2.0)
                     
@@ -139,7 +127,6 @@ class WebhookServer:
                     else:
                         next_amount = round(amount * float(mg_mult), 2)
                         texto_modo = f"{mg_mult}x"
-                    # ====================================================
 
                     if mg_type == "Vela":
                         msg_mg = f"🔄 *Martingale Vela* acionado! (Passo {next_step}/{mg_steps})\nModo: {texto_modo} | Entrando com ${next_amount:.2f} em {symbol}."
@@ -160,7 +147,6 @@ class WebhookServer:
             
         else:
             await log_trade(symbol, direction, amount, duration, "FALHOU", None)
-
 
     async def handle_signal(self, request):
         try:
@@ -184,7 +170,6 @@ class WebhookServer:
             msg = f"🔔 SINAL MT5 RECEBIDO!\nAtivo: {ativo}\nDireção: {direcao.upper()}"
             await self.telegram_bot.send_alert(f"🚀 {msg}")
 
-            # Chama a nossa nova função que executa e depois espera para monitorizar
             asyncio.create_task(
                 self._execute_and_monitor(ativo, direcao, amount, duration)
             )
@@ -195,7 +180,6 @@ class WebhookServer:
             logger.error(f"Erro ao processar sinal do webhook: {e}")
             return web.Response(text="Erro interno no servidor", status=500)
 
-    # ... as funções start() e stop() mantêm-se iguais
     async def start(self, port=8080):
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()

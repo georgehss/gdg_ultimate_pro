@@ -51,36 +51,33 @@ class HioveBrokerAPI:
     # ========================================================
     # NOVA FUNÇÃO UNIVERSAL DE ORDEM E MONITORAMENTO
     # ========================================================
-    async def place_order_and_monitor(self, symbol: str, direction: str, amount: float, duration: str, telegram_alert_cb, current_step=0):
+    async def place_order_and_monitor(self, symbol: str, direction: str, amount: float, duration: str, telegram_alert_cb, current_step=0, accumulated_loss=0.0):
         if self.stop_triggered:
             return None
             
         # --- LÓGICA DO MARTINGALE SINAL ANTES DE ENTRAR ---
         mg_type = self.user_config.get("martingale_type", "Nenhum")
-        mg_signal_mode = self.user_config.get("martingale_signal_mode", "Global") # "Global" ou "Ativo"
+        mg_signal_mode = self.user_config.get("martingale_signal_mode", "Global")
 
-        # Se for modo Sinal e for a primeira entrada do bot (não é vela esticada)
         if mg_type == "Sinal" and current_step == 0:
-            
-            # OPÇÃO A: Modo Global (Puxa da Fila)
             if mg_signal_mode == "Global" and len(self.martingale_queue) > 0:
                 mg_data = self.martingale_queue.pop(0) 
                 amount = mg_data['next_amount']
                 current_step = mg_data['step']
+                accumulated_loss = mg_data.get('accumulated_loss', 0.0)
                 
                 msg = f"🔄 Aplicando MG Sinal (Global) - Passo {current_step} em {symbol}: Valor ${amount:.2f}. Restam {len(self.martingale_queue)} na fila."
                 logger.info(msg)
                 await telegram_alert_cb(msg)
                 
-            # OPÇÃO B: Modo Ativo (Puxa da Gaveta Específica)
             elif mg_signal_mode == "Ativo":
-                state = self.martingale_state.get(symbol, {'step': 0, 'next_amount': 0})
+                state = self.martingale_state.get(symbol, {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0})
                 if state['step'] > 0:
                     amount = state['next_amount']
                     current_step = state['step']
+                    accumulated_loss = state.get('accumulated_loss', 0.0)
                     
-                    # Limpa a gaveta deste ativo imediatamente
-                    self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
+                    self.martingale_state[symbol] = {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0}
                     
                     msg = f"🔄 Aplicando MG Sinal (Ativo) - Passo {current_step} estritamente em {symbol}: Valor ${amount:.2f}."
                     logger.info(msg)
@@ -173,7 +170,7 @@ class HioveBrokerAPI:
             self.active_monitors += 1
             asyncio.create_task(self._monitor_task(
                 symbol, order_id, segundos_espera, telegram_alert_cb, 
-                amount, direction, duration, current_step, payout_str, hora_atual, saldo_inicial
+                amount, direction, duration, current_step, payout_str, hora_atual, saldo_inicial, accumulated_loss
             ))
         else:
             await log_trade(symbol, direction, amount, duration, "FALHOU", None)
@@ -284,7 +281,7 @@ class HioveBrokerAPI:
                 # Limpa a gaveta do ativo por segurança caso estivesse no modo 'Ativo'
                 self.martingale_state[symbol] = {'step': 0, 'next_amount': 0}
                 
-            # Se for LOSS, ou EMPATE DENTRO DO MG:
+            # Se for LOSS, ou se for EMPATE DENTRO DO MARTINGALE:
             elif (status == "LOSS" or (status == "EMPATE" and current_step > 0)) and mg_type != "Nenhum":
                 if current_step < mg_steps:
                     next_step = current_step + 1
@@ -294,7 +291,6 @@ class HioveBrokerAPI:
                     mg_mult = self.user_config.get("martingale_multiplier", 2.0)
                     
                     if mg_mult == "Conservador":
-                        # Modo de recuperação estrita (Sem lucro)
                         payout_decimal = 0.85
                         try:
                             if payout != "N/A":
@@ -305,22 +301,19 @@ class HioveBrokerAPI:
                         next_amount = round(novo_prejuizo / payout_decimal, 2)
                         texto_modo = "Conservador"
                     else:
-                        # Modo tradicional (Multiplicando a aposta anterior)
                         next_amount = round(amount * float(mg_mult), 2)
                         texto_modo = f"{mg_mult}x"
                     # ====================================================
 
                     if mg_type == "Vela":
                         if cancelar_mg_vela:
-                            msg_mg = f"⚠️ *Martingale Vela Cancelado* em {symbol}!\nO resultado demorou muito a carregar. A mão voltará ao inicial."
+                            msg_mg = f"⚠️ *Martingale Vela Cancelado* em {symbol}!\nO resultado demorou muito a carregar na corretora. A mão voltará ao inicial."
                             asyncio.create_task(telegram_alert_cb(msg_mg))
                             self.martingale_state[symbol] = {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0}
                         else:
                             motivo = "Empate" if status == "EMPATE" else "Loss"
                             msg_mg = f"🔄 *Martingale Vela* acionado por {motivo}! (Passo {next_step}/{mg_steps})\nModo: {texto_modo} | Entrando com ${next_amount:.2f} em {symbol}."
                             asyncio.create_task(telegram_alert_cb(msg_mg)) 
-                            
-                            # PASSA O NOVO PREJUÍZO PARA A PRÓXIMA ENTRADA
                             asyncio.create_task(self.place_order_and_monitor(
                                 symbol, direction, next_amount, duration, telegram_alert_cb, current_step=next_step, accumulated_loss=novo_prejuizo
                             ))
@@ -330,7 +323,7 @@ class HioveBrokerAPI:
                         
                         if mg_signal_mode == "Global":
                             self.martingale_queue.append({'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo})
-                            msg_mg = f"🔄 *Martingale Sinal (Global)* na fila. Prejuízo de ${novo_prejuizo:.2f}. Próxima entrada será de ${next_amount:.2f}."
+                            msg_mg = f"🔄 *Martingale Sinal (Global)* na fila. Prejuízo de ${novo_prejuizo:.2f}. Próxima entrada: ${next_amount:.2f}."
                         else:
                             self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo}
                             msg_mg = f"🔄 *Martingale Sinal (Ativo)* preparado. Próximo sinal em {symbol} entrará com ${next_amount:.2f} ({texto_modo})."

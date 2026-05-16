@@ -15,9 +15,8 @@ class TradingTelegramBot:
         self.app = None
         
         self.setup_event = asyncio.Event()
-        self.stop_session_event = asyncio.Event() # Evento para gerir a paragem da sessão
+        self.stop_session_event = asyncio.Event() 
         
-        # Guardará TODAS as escolhas do usuário
         self.user_config = {
             "is_demo": True,
             "mode": "strategy",
@@ -35,7 +34,7 @@ class TradingTelegramBot:
             "take_profit": 50.0,
             "stop_loss": -20.0
         }
-        self.setup_step = "account" # Controla em qual passo estamos
+        self.setup_step = "account" 
 
     async def check_auth(self, update: Update) -> bool:
         user_id = str(update.effective_user.id)
@@ -51,13 +50,11 @@ class TradingTelegramBot:
             await update.message.reply_text("⚠️ O robô já está rodando! Para reconfigurar, pare a sessão atual com /stop.")
             return
 
-        # Verifica se tem configuração salva
         saved_config = await load_user_config()
         if saved_config:
-            self.setup_step = "start_menu" # Vai para o novo menu
+            self.setup_step = "start_menu" 
             await self.send_setup_step(update.message)
         else:
-            # Se não tiver, começa do zero
             self.setup_step = "account"
             self.user_config["assets"] = []
             await self.send_setup_step(update.message)
@@ -80,17 +77,13 @@ class TradingTelegramBot:
         )
 
     async def send_setup_step(self, message_obj, is_edit=False):
-        """Envia ou edita a mensagem dependendo do passo atual"""
         text = ""
         keyboard = []
 
-        # NOVO MENU DE CONFIGURAÇÃO SALVA
         if self.setup_step == "start_menu":
-            # Carrega a configuração salva do banco de dados para mostrar ao usuário
             saved_config = await load_user_config()
             
             if saved_config:
-                # Formata os dados de forma segura (usando .get para evitar erros)
                 tipo_conta = "DEMO 🟢" if saved_config.get('is_demo') else "REAL 🔴"
                 modo = saved_config.get('mode', 'Desconhecido').upper().replace('_', ' ')
                 perfil = saved_config.get('profile', 'Balanceado')
@@ -101,11 +94,13 @@ class TradingTelegramBot:
                 sl = float(saved_config.get('stop_loss', 0.0))
                 
                 mg_str = "❌ Desativado"
-                if self.user_config.get('martingale_type') and self.user_config['martingale_type'] != "Nenhum":
-                    # Se for Sinal, adiciona a tag (Global) ou (Ativo) ao lado do nome
-                    modo_str = f" ({self.user_config.get('martingale_signal_mode', 'Global')})" if self.user_config['martingale_type'] == "Sinal" else ""
-                    
-                    mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {self.user_config.get('martingale_multiplier', 0)}x"
+                if saved_config.get('martingale_type') and saved_config['martingale_type'] != "Nenhum":
+                    modo_str = f" ({saved_config.get('martingale_signal_mode', 'Global')})" if saved_config['martingale_type'] == "Sinal" else ""
+                    mult = saved_config.get('martingale_multiplier', 0)
+                    if mult == "Conservador":
+                        mg_str = f"{saved_config['martingale_type']}{modo_str} | {saved_config.get('martingale_steps', 0)} passos | Conservador"
+                    else:
+                        mg_str = f"{saved_config['martingale_type']}{modo_str} | {saved_config.get('martingale_steps', 0)} passos | {mult}x"
 
                 text = (
                     f"💾 *Configuração Salva Encontrada*\n\n"
@@ -113,7 +108,7 @@ class TradingTelegramBot:
                     f"▫️ Conta: {tipo_conta}\n"
                     f"▫️ Modo: {modo}\n"
                     f"▫️ Perfil: {perfil}\n"
-                    f"▫️ Análise Gráfica: {self.user_config.get('timeframe', '1m')}\n"
+                    f"▫️ Análise Gráfica: {saved_config.get('timeframe', '1m')}\n"
                     f"▫️ Ativos: {ativos}\n"
                     f"▫️ Tempo Expiração: {tempo}\n"
                     f"▫️ Valor Ordem: ${valor:.2f}\n"
@@ -159,7 +154,6 @@ class TradingTelegramBot:
         elif self.setup_step == "consensus_strategies":
             text = "🤝 *Estratégias do Consenso*\nQuais estratégias devem participar da votação? (Escolha pelo menos 2)"
             
-            # Pega as selecionadas (cuidado com erro se for a primeira vez)
             ativas = self.user_config.get("active_strategies", [])
             rsi_text = "✅ RSI" if "rsi" in ativas else "RSI"
             ma_text = "✅ MA Cross" if "ma" in ativas else "MA Cross"
@@ -338,16 +332,9 @@ class TradingTelegramBot:
         await query.answer()
         data = query.data
 
-        # ==========================================
-        # NOVOS COMANDOS DE PARADA E PÓS-PARADA
-        # ==========================================
         if data == 'stop_yes':
-            # 1. Muda a mensagem rapidamente para dar feedback
             await query.edit_message_text("⏳ *Calculando resultados e encerrando sessão...*", parse_mode='Markdown')
             
-            # ==========================================
-            # 2. LER RESULTADOS FINAIS (COM NAVEGADOR AINDA ABERTO)
-            # ==========================================
             saldo_atual = 0.0
             if self.broker and self.broker.scraper:
                 ativo_base = self.user_config["assets"][0] if self.user_config.get("assets") else None
@@ -358,14 +345,8 @@ class TradingTelegramBot:
             if session_start:
                 lucro_sessao = await get_session_profit(session_start)
 
-            # ==========================================
-            # 3. AGORA SIM, MANDA DESTRUIR A SESSÃO!
-            # ==========================================
             self.stop_session_event.set() 
 
-            # ==========================================
-            # 4. MONTAR A MENSAGEM FINAL
-            # ==========================================
             msg_resumo = (
                 f"✅ *Sessão Encerrada com Sucesso!*\n"
                 f"Todas as abas e operações foram finalizadas.\n\n"
@@ -390,8 +371,6 @@ class TradingTelegramBot:
             await query.edit_message_text("▶️ Parada cancelada. A sessão atual continua operando normalmente.")
             return
 
-        
-        # GERENCIAMENTO DA CONFIGURAÇÃO SALVA
         elif data == 'session_new':
             saved_config = await load_user_config()
             if saved_config:
@@ -406,8 +385,8 @@ class TradingTelegramBot:
         elif data == 'menu_load_saved':
             saved_config = await load_user_config()
             if saved_config:
-                self.user_config.update(saved_config) # Puxa tudo da memória
-                await self._show_final_summary(query) # Mostra o resumo e inicia
+                self.user_config.update(saved_config) 
+                await self._show_final_summary(query) 
             return
 
         elif data == 'menu_new_config':
@@ -420,16 +399,10 @@ class TradingTelegramBot:
             await query.edit_message_text("💤 *Robô em modo de espera.*\n\nO sistema continua online no terminal. Quando quiser operar novamente, basta digitar /start.", parse_mode='Markdown')
             return
 
-        # ==========================================
-        # BLOQUEIO DE SEGURANÇA ORIGINAL
-        # Garante que os botões de setup não sejam clicados durante uma sessão ativa
         if self.setup_event.is_set():
             await query.edit_message_text(text="⚠️ O robô já foi inicializado e está operando.")
             return
         
-        # ==========================================
-        # LÓGICA DO BOTÃO VOLTAR
-        # ==========================================
         if data.startswith('back_'):
             step = data.replace('back_', '')
             
@@ -450,11 +423,10 @@ class TradingTelegramBot:
                 if self.user_config.get("mode") in ["live", "list"]:
                     self.setup_step = 'mode'
                 else:
-                    self.setup_step = 'timeframe' # Voltar de Ativos vai para Timeframe
+                    self.setup_step = 'timeframe' 
             elif step == 'duration':
-                self.setup_step = 'assets' # Voltar de Duração vai para Ativos
+                self.setup_step = 'assets' 
             elif step == 'timeframe':
-                # Voltar de Timeframe vai para Customizado (se ativado) ou Perfil
                 if self.user_config.get("profile") == "Customizado":
                     self.setup_step = 'wait_custom_params'
                 else:
@@ -466,7 +438,6 @@ class TradingTelegramBot:
             elif step == 'martingale_signal_mode':
                 self.setup_step = 'martingale_type'
             elif step == 'martingale_steps':
-                # Se for "Sinal", volta para a escolha de modo. Se for "Vela", volta para o tipo.
                 if self.user_config.get("martingale_type") == "Sinal":
                     self.setup_step = 'martingale_signal_mode'
                 else:
@@ -474,7 +445,6 @@ class TradingTelegramBot:
             elif step == 'martingale_multiplier':
                 self.setup_step = 'martingale_steps'
             elif step == 'take_profit':
-                # Se o Martingale estava desativado, o passo anterior foi o tipo de martingale
                 if self.user_config.get("martingale_type") == "Nenhum":
                     self.setup_step = 'martingale_type'
                 else:
@@ -485,37 +455,30 @@ class TradingTelegramBot:
             await self.send_setup_step(query.message, is_edit=True)
             return
 
-        # Passo 1: Conta
         if data.startswith('acc_'):
             self.user_config["is_demo"] = (data == 'acc_demo')
             self.setup_step = "mode"
             
-        # Passo 2: Modo de Operação
         elif data.startswith('mod_'):
             modo_escolhido = data.replace('mod_', '')
             
             if modo_escolhido == "strategy_menu":
-                # Se ele escolheu o menu de estratégias, mudamos para o ecrã secundário
                 self.setup_step = "strategy_type"
                 await self.send_setup_step(query.message, is_edit=True)
                 return
             else:
-                # Se for live ou list, guarda o modo e salta direto para os ativos
                 self.user_config["mode"] = modo_escolhido 
                 self.setup_step = "assets"
                 
-        # Passo 2.1: Submenu de Estratégias Internas
         elif data.startswith('strat_'):
             strat_escolhida = data.replace('strat_', '', 1)
             self.user_config["mode"] = strat_escolhida
             
-            # Se escolheu Consenso, vai para o menu de escolha de estratégias. Senão, vai para perfil.
             if strat_escolhida == "strat_consensus":
                 self.setup_step = "consensus_strategies"
             else:
                 self.setup_step = "profile"
 
-        # Passo 2.2: Escolhendo estratégias do consenso
         elif data.startswith('cstrat_'):
             strat = data.replace('cstrat_', '')
             if strat == "done":
@@ -524,7 +487,6 @@ class TradingTelegramBot:
                     return
                 self.setup_step = "consensus_votes"
             else:
-                # Toggle (Adiciona ou Remove)
                 if "active_strategies" not in self.user_config:
                     self.user_config["active_strategies"] = []
                 
@@ -533,12 +495,10 @@ class TradingTelegramBot:
                 else:
                     self.user_config["active_strategies"].append(strat)
 
-        # Passo 2.3: Escolhendo votos do consenso
         elif data.startswith('cvote_'):
             self.user_config["min_votes_required"] = int(data.split('_')[1])
-            self.setup_step = "profile" # Avança para o perfil após escolher os votos
+            self.setup_step = "profile" 
                 
-        # NOVO PASSO: Perfil de Operação
         elif data.startswith('prof_'):
             self.user_config["profile"] = data.split('_')[1]
             
@@ -547,7 +507,6 @@ class TradingTelegramBot:
             else:
                 self.setup_step = "timeframe"
             
-        # Passo 3: Ativos
         elif data.startswith('ast_'):
             asset = data.replace('ast_', '')
             if asset == "done":
@@ -556,28 +515,23 @@ class TradingTelegramBot:
                     return
                 self.setup_step = "duration"
             else:
-                # Adiciona ou remove o ativo da lista (Toggle)
                 if asset in self.user_config["assets"]:
                     self.user_config["assets"].remove(asset)
                 else:
                     self.user_config["assets"].append(asset)
 
-        # NOVO PASSO 3.5: Timeframe
         elif data.startswith('tf_'):
             self.user_config["timeframe"] = data.split('_')[1]
             self.setup_step = "assets"
                     
-        # Passo 4: Duração
         elif data.startswith('dur_'):
             self.user_config["duration"] = data.split('_')[1]
             self.setup_step = "amount"
             
-        # Passo 5: Valor
         elif data.startswith('amt_'):
             self.user_config["amount"] = float(data.split('_')[1])
-            self.setup_step = "martingale_type" # Vai para o Martingale
+            self.setup_step = "martingale_type" 
             
-        # Passo 6: Martingale Type
         elif data.startswith('mgtype_'):
             self.user_config["martingale_type"] = data.split('_')[1]
             if self.user_config["martingale_type"] == "Nenhum":
@@ -587,17 +541,14 @@ class TradingTelegramBot:
             else:
                 self.setup_step = "martingale_steps"
 
-        # Passo 6.5: Martingale Signal Mode
         elif data.startswith('mgmode_'):
             self.user_config["martingale_signal_mode"] = data.split('_')[1]
             self.setup_step = "martingale_steps"
 
-        # Passo 7: Martingale Steps
         elif data.startswith('mgstep_'):
             self.user_config["martingale_steps"] = int(data.split('_')[1])
             self.setup_step = "martingale_multiplier"
 
-        # Passo 8: Martingale Multiplier
         elif data.startswith('mgmult_'):
             mult_value = data.split('_')[1]
             if mult_value == "Conservador":
@@ -606,30 +557,25 @@ class TradingTelegramBot:
                 self.user_config["martingale_multiplier"] = float(mult_value)
             self.setup_step = "take_profit"
             
-        # Passo 9: Take Profit
         elif data.startswith('tp_'):
             self.user_config["take_profit"] = float(data.split('_')[1])
             self.setup_step = "stop_loss"
 
-        # Passo 10: Stop Loss (Finaliza!)
         elif data.startswith('sl_'):
             self.user_config["stop_loss"] = float(data.split('_')[1])
             await self._show_final_summary(query)
             return
 
-        # Atualiza o painel para o próximo passo (se não for o fim)
         await self.send_setup_step(query.message, is_edit=True)
 
     async def text_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_auth(update): return
         
         if self.setup_step == "wait_custom_params":
-            # Guarda o texto digitado (ex: "14, 80, 20")
             self.user_config["custom_params"] = update.message.text.strip()
             self.setup_step = "timeframe"
             await self.send_setup_step(update.message, is_edit=False)
 
-    # (Os métodos status_command, send_alert, start_polling e stop continuam iguais ao anterior)
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_auth(update): return
         
@@ -637,15 +583,10 @@ class TradingTelegramBot:
             await update.message.reply_text("⚠️ O robô ainda não foi inicializado. Use /start para iniciar uma sessão.")
             return
 
-        # Envia uma mensagem de carregamento, pois ir ler a tela da corretora pode demorar 1 ou 2 segundos
         status_msg = await update.message.reply_text("⏳ *Consultando dados ao vivo da corretora...*", parse_mode='Markdown')
 
-        # ==========================================
-        # 1. OBTER DADOS AO VIVO (Saldo e Lucro)
-        # ==========================================
         saldo_atual = 0.0
         if self.broker and self.broker.scraper:
-            # Tenta ler o saldo usando a aba do primeiro ativo aberto para ser mais rápido
             ativo_base = self.user_config["assets"][0] if self.user_config.get("assets") else None
             saldo_atual = await self.broker.scraper.get_balance(ativo_base)
         
@@ -654,13 +595,8 @@ class TradingTelegramBot:
         if session_start:
             lucro_sessao = await get_session_profit(session_start)
 
-        # ==========================================
-        # 2. FORMATAR TEXTOS DA CONFIGURAÇÃO
-        # ==========================================
-        # Formata a string do Martingale
         mg_str = "❌ Desativado"
         if self.user_config.get('martingale_type') and self.user_config['martingale_type'] != "Nenhum":
-            # Se for Sinal, adiciona a tag (Global) ou (Ativo) ao lado do nome
             modo_str = f" ({self.user_config.get('martingale_signal_mode', 'Global')})" if self.user_config['martingale_type'] == "Sinal" else ""
             
             mult = self.user_config.get('martingale_multiplier', 0)
@@ -669,14 +605,12 @@ class TradingTelegramBot:
             else:
                 mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {mult}x"
 
-        # Formata a lista de estratégias ativas
         if self.manager and self.manager.strategies:
             active_strats = [s.name.replace('_', '\\_') for s in self.manager.strategies if getattr(s, 'is_running', False)]
             strat_msg = "\n".join([f"✅ {name}" for name in active_strats]) if active_strats else "❌ Nenhuma estratégia a rodar."
         else:
             strat_msg = "📡 Aguardando sinais do MT5 (Webhook)..." if self.user_config.get('mode') == 'live' else "❌ Nenhum gerenciador vinculado."
 
-        # Captura os dados de forma segura (com valores padrão caso algo falte)
         tipo_conta = "DEMO 🟢" if self.user_config.get('is_demo') else "REAL 🔴"
         modo = self.user_config.get('mode', 'Desconhecido').upper().replace('_', ' ')
         perfil = self.user_config.get('profile', 'Balanceado')
@@ -685,9 +619,6 @@ class TradingTelegramBot:
         tp = float(self.user_config.get('take_profit', 0.0))
         sl = float(self.user_config.get('stop_loss', 0.0))
 
-        # ==========================================
-        # 3. MONTAR A MENSAGEM FINAL
-        # ==========================================
         msg = (
             f"📊 *STATUS DO SISTEMA*\n\n"
             f"▫️ Conta: {tipo_conta}\n"
@@ -704,7 +635,6 @@ class TradingTelegramBot:
             f"*Estratégias Ativas:*\n{strat_msg}"
         )
 
-        # Edita a mensagem de carregamento com os dados reais
         await status_msg.edit_text(text=msg, parse_mode='Markdown')
 
     async def estrategias_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -747,8 +677,7 @@ class TradingTelegramBot:
             logger.error(f"Erro ao enviar alerta via Telegram: {e}")
 
     async def send_limit_reached_menu(self, limit_msg: str, saldo_atual: float, lucro_sessao: float):
-        """Envia o menu com botões quando a meta ou o stop loss é batido e para a sessão."""
-        self.stop_session_event.set() # Avisa o main.py para destruir a sessão de forma segura (fechar navegador, etc.)
+        self.stop_session_event.set() 
         
         msg_resumo = (
             f"{limit_msg}\n\n"
@@ -796,10 +725,8 @@ class TradingTelegramBot:
             await self.app.shutdown()
 
     async def _show_final_summary(self, query):
-        """Mostra o resumo e dispara a inicialização do robô"""
         mg_str = "❌ Desativado"
         if self.user_config.get('martingale_type') and self.user_config['martingale_type'] != "Nenhum":
-            # Se for Sinal, adiciona a tag (Global) ou (Ativo) ao lado do nome
             modo_str = f" ({self.user_config.get('martingale_signal_mode', 'Global')})" if self.user_config['martingale_type'] == "Sinal" else ""
             
             mult = self.user_config.get('martingale_multiplier', 0)
@@ -808,7 +735,6 @@ class TradingTelegramBot:
             else:
                 mg_str = f"{self.user_config['martingale_type']}{modo_str} | {self.user_config.get('martingale_steps', 0)} passos | {mult}x"
 
-        # Cria uma string bonita para o perfil
         perfil_exibicao = self.user_config.get('profile', 'Balanceado')
         if perfil_exibicao == "Customizado" and self.user_config.get('custom_params'):
             perfil_exibicao += f" ({self.user_config['custom_params']})"
@@ -829,7 +755,6 @@ class TradingTelegramBot:
         )
         await query.edit_message_text(text=resumo, parse_mode='Markdown')
         
-        # SALVA A CONFIGURAÇÃO NO BANCO DE DADOS AQUI!
         await save_user_config(self.user_config)
         
         self.setup_event.set()
