@@ -698,6 +698,38 @@ class TradingTelegramBot:
         # Edita a mensagem de carregamento com os dados reais
         await status_msg.edit_text(text=msg, parse_mode='Markdown')
 
+    async def estrategias_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not await self.check_auth(update): return
+        
+        instrucoes = """
+        *🤖 INSTRUÇÕES DE ESTRATÉGIAS DO BOT 🤖*
+        =========================================
+
+        *1. PRICE ACTION PRO (O Caçador de Padrões)*
+        Esta estratégia observa o comportamento "nu e cru" das velas, mas usa uma bússola de longo prazo para não ser enganada por falsos movimentos.
+        • *O Gatilho Visual:* Espera fechar duas velas e procura por padrões claros de reversão, como o "Engolfo" (uma vela engole o corpo da anterior), Martelo ou Estrela Cadente.
+        • *A "Maré" do Mercado:* Consulta três Médias Móveis Suavizadas (SMMAs: 8, 59 e 200). A SMMA 200 dita a macro-tendência, e as curtas ditam a aceleração. Para comprar, o preço precisa estar acima da 200 e as médias alinhadas.
+        • *Segurança:* Exige que a vela rompa a SMMA curta (8) com volume financeiro maior que a vela anterior.
+
+        *2. MA CROSS PRO (O Surfista de Tendências)*
+        Estratégia de cruzamento de médias (Rápida x Lenta) turbinada com filtros institucionais para evitar falsos sinais em mercados laterais.
+        • *Filtro de Separação (ATR):* Não aceita um cruzamento "raspando". Exige que as médias se cruzem e se afastem com uma distância mínima baseada na volatilidade.
+        • *Filtro de Rampa (Slope):* A média lenta precisa estar efetivamente "apontada" para o lado da operação. 
+        • *Confirmações:* Valida se o ADX (força da tendência) é forte e se há aumento real no volume (vela de ignição).
+
+        *3. RSI PRO (O Operador de Elástico)*
+        Foca em capturar reversões após exaustão extrema do preço.
+        • *Gatilho de Tensão (RSI):* Monitora o RSI para identificar quando o mercado está muito sobrevendido (abaixo de 30) ou sobrecomprado (acima de 70).
+        • *Confirmação Extrema (Bandas de Bollinger):* Exige que o preço tenha perfurado as Bandas de Bollinger junto com o RSI extremo.
+        • *Defesa Institucional:* Na vela de reversão, o volume precisa ser maior que o da vela anterior, sinalizando que os grandes players estão defendendo a região.
+
+        *4. CONSENSUS STRATEGY (O Orquestrador Inteligente)*
+        Atua como um coordenador que consulta os sinais das outras 3 abordagens.
+        • *Votação Democrática:* Você define um número mínimo de votos (ex: 2). A ordem só é disparada se houver essa concordância na direção.
+        • *Trava Anti-Conflito:* Se uma estratégia gritar "COMPRA" e outra gritar "VENDA" ao mesmo tempo, ocorre um Conflito Global e a operação é abortada imediatamente por segurança.
+        """
+        await update.message.reply_text(instrucoes, parse_mode='Markdown')
+
     async def send_alert(self, message: str):
         if not self.app or not self.admin_id: return
         try:
@@ -740,6 +772,7 @@ class TradingTelegramBot:
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("stop", self.stop_command))
         self.app.add_handler(CommandHandler("status", self.status_command))
+        self.app.add_handler(CommandHandler("estrategias", self.estrategias_command))
         self.app.add_handler(CallbackQueryHandler(self.button_handler))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.text_handler))
         logger.info("Bot do Telegram inicializado. Aguardando /start...")
