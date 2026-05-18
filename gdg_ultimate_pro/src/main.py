@@ -179,6 +179,20 @@ async def run_session(tg_bot, global_stop_event):
     await scraper.close()
     logger.info("Sessão finalizada com sucesso. Memória limpa.")
 
+async def monitorar_terminal(global_stop_event):
+    """
+    Fica ouvindo o terminal do sistema de forma assíncrona (não bloqueante)
+    até que o usuário digite 'exit'.
+    """
+    loop = asyncio.get_running_loop()
+    while not global_stop_event.is_set():
+        # Usa um executor para que o readline não congele as outras operações assíncronas do robô
+        comando = await loop.run_in_executor(None, sys.stdin.readline)
+        
+        if comando.strip().lower() == "exit":
+            logger.info("⚠️ Comando 'exit' detectado no terminal. Iniciando desligamento seguro...")
+            global_stop_event.set()
+            break  
 
 async def main():
     logger.info("Iniciando o sistema central do Robô...")
@@ -189,16 +203,29 @@ async def main():
 
     global_stop_event = asyncio.Event()
 
-    def handle_sigint():
-        logger.warning("Sinal de interrupção forçada no Terminal recebido (CTRL+C).")
-        global_stop_event.set()
+    # ==========================================
+    # BLOQUEIO DO CTRL+C 
+    # ==========================================
+    def handle_sigint(*args):
+        # Apenas avisa, mas NÃO seta o global_stop_event
+        print("\n[AVISO] Sinal CTRL+C bloqueado. Digite 'exit' e pressione Enter para encerrar o bot.")
 
+    # Intercepta os sinais tradicionais do OS 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try: loop.add_signal_handler(sig, handle_sigint)
-        except NotImplementedError: pass
+        try: 
+            loop.add_signal_handler(sig, handle_sigint)
+        except NotImplementedError: 
+            pass
+            
+    # Reforço global contra o KeyboardInterrupt (muito útil em Windows)
+    signal.signal(signal.SIGINT, handle_sigint)
+
+    # Inicia a tarefa que escuta a digitação do usuário
+    terminal_task = asyncio.create_task(monitorar_terminal(global_stop_event))
 
     logger.info("Aguardando o usuário iniciar via Telegram (Envie /start lá)...")
+    logger.info("💡 DICA: Digite 'exit' neste terminal para desligar tudo de vez.")
 
     # ==========================================
     # LOOP INFINITO DO SERVIDOR CENTRAL
@@ -213,7 +240,7 @@ async def main():
         for task in [setup_task, gstop_task]:
             if not task.done(): task.cancel()
 
-        # Se pararam pelo terminal (Ctrl+C), quebra o loop infinito e morre de vez
+        # Se pararam pelo terminal (comando 'exit' disparado), quebra o loop infinito
         if global_stop_event.is_set():
             break
 
@@ -221,11 +248,14 @@ async def main():
         if tg_bot.setup_event.is_set():
             await run_session(tg_bot, global_stop_event)
             
-            # Quando a sessão terminar (via comando /stop), resetamos os eventos para permitir uma nova sessão
             tg_bot.setup_event.clear()
             tg_bot.stop_session_event.clear()
             tg_bot.manager = None
             tg_bot.broker = None
+
+    # Cancela a tarefa de terminal para a memória não ficar pendurada
+    if not terminal_task.done():
+        terminal_task.cancel()
 
     logger.info("Desligando conexões permanentes (Telegram)...")
     await tg_bot.stop()
@@ -235,4 +265,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot interrompido manualmente pelo usuário.")
+        # Pega qualquer resíduo se o usuário esmagar o CTRL+C agressivamente
+        print("\nBot interrompido/cancelado (Por favor, nas próximas vezes use o comando 'exit').")
