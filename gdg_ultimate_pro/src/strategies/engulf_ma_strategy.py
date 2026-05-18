@@ -117,16 +117,16 @@ class EngulfMAStrategy(BaseStrategy):
             df['lowPrice'] = pd.to_numeric(df['lowPrice'])
             df['time'] = pd.to_numeric(df['time'])
             
-            # NOVO: 1. Converte a coluna de volume da corretora
+            # Converte a coluna de volume da corretora
             df['volume'] = pd.to_numeric(df['volume'])
             
-            # 1) Cálculo das 3 SMMAs (ta.rma é o equivalente à SMMA no pandas_ta)
+            # Cálculo das 3 SMMAs (ta.rma é o equivalente à SMMA no pandas_ta)
             df['smma_short'] = ta.rma(df['closePrice'], length=self.short_ma_period)
             df['smma_medium'] = ta.rma(df['closePrice'], length=self.medium_ma_period)
             df['smma_long'] = ta.rma(df['closePrice'], length=self.long_ma_period)
             df['rsi'] = ta.rsi(df['closePrice'], length=self.rsi_period)
             
-            # NOVO: 2. Calcula o ADX para evitar lateralização
+            # Calcula o ADX para evitar lateralização
             adx_df = ta.adx(df['highPrice'], df['lowPrice'], df['closePrice'], length=14)
             df['adx'] = adx_df[adx_df.columns[0]]
             
@@ -148,7 +148,7 @@ class EngulfMAStrategy(BaseStrategy):
             # Dados Vela 1 (Sinal / Recém Fechada)
             o1, c1, h1, l1 = df['openPrice'].iloc[idx1], df['closePrice'].iloc[idx1], df['highPrice'].iloc[idx1], df['lowPrice'].iloc[idx1]
             
-            # NOVO: Puxa os dados das 3 SMMAs
+            # Puxa os dados das 3 SMMAs
             smma_short1 = df['smma_short'].iloc[idx1]
             smma_medium1 = df['smma_medium'].iloc[idx1]
             smma_long1 = df['smma_long'].iloc[idx1]
@@ -157,7 +157,7 @@ class EngulfMAStrategy(BaseStrategy):
             size1 = df['candle_size'].iloc[idx1]
             avg_size1 = df['avg_size'].iloc[idx2] 
             
-            # 3. Pega o volume e o ADX da vela de sinal
+            # Pega o volume e o ADX da vela de sinal
             v1 = df['volume'].iloc[idx1]
             adx1 = df['adx'].iloc[idx1]
             
@@ -165,7 +165,7 @@ class EngulfMAStrategy(BaseStrategy):
             o2, c2, h2, l2 = df['openPrice'].iloc[idx2], df['closePrice'].iloc[idx2], df['highPrice'].iloc[idx2], df['lowPrice'].iloc[idx2]
             v2 = df['volume'].iloc[idx2]
             
-            # 2) Leitura de Corpo e Pavios
+            # Leitura de Corpo e Pavios
             body1 = abs(c1 - o1)
             upper_wick1 = h1 - max(o1, c1)
             lower_wick1 = min(o1, c1) - l1
@@ -187,21 +187,92 @@ class EngulfMAStrategy(BaseStrategy):
             volume_ok = (v1 > (v2 * self.volume_mult)) if use_volume else True
             trend_strength_ok = (adx1 > self.min_adx) if use_adx else True
             
-            # 3) Lógica dos Padrões Gráficos
+            # ----------------------------------------------------
+            # Lógica dos Padrões Gráficos (Price Action Pro Expandido)
+            # ----------------------------------------------------
+            
+            # Necessário para os novos cálculos:
+            body2 = abs(c2 - o2)
+            midpoint_2 = (o2 + c2) / 2
+            
+            # Padrões Originais
             bullish_engulf = bull1 and bear2 and (o1 <= c2 + self.epsilon) and (c1 >= o2 - self.epsilon)
             bearish_engulf = bear1 and bull2 and (o1 >= c2 - self.epsilon) and (c1 <= o2 + self.epsilon)
             
-            is_hammer = bull1 and (lower_wick1 >= 2 * body1) and (upper_wick1 <= body1) and (body1 > self.epsilon)
-            is_shooting_star = bear1 and (upper_wick1 >= 2 * body1) and (lower_wick1 <= body1) and (body1 > self.epsilon)
+            # Martelo: O pavio inferior representa pelo menos 60% do tamanho total da vela, 
+            # e o pavio superior não passa de 20% da vela. (O corpo pode ser pequeno).
+            is_hammer = (lower_wick1 >= size1 * 0.6) and (upper_wick1 <= size1 * 0.2) and (body1 > self.epsilon)
+            
+            # Estrela Cadente: O pavio superior representa pelo menos 60% do tamanho da vela,
+            # e o pavio inferior não passa de 20%.
+            is_shooting_star = (upper_wick1 >= size1 * 0.6) and (lower_wick1 <= size1 * 0.2) and (body1 > self.epsilon)
 
-            bullish_pattern = "Engolfo de Alta" if bullish_engulf else ("Martelo" if is_hammer else None)
-            bearish_pattern = "Engolfo de Baixa" if bearish_engulf else ("Estrela Cadente" if is_shooting_star else None)
+            # 1: Marubozu (Vela de Força - Corpo compõe mais de 90% da vela)
+            is_marubozu_bull = bull1 and (body1 >= size1 * 0.9) and (body1 > self.epsilon)
+            is_marubozu_bear = bear1 and (body1 >= size1 * 0.9) and (body1 > self.epsilon)
 
-            # 4) Alinhamento Triplo de Tendência (As 3 SMMAs alinhadas com o preço)
+            # 2: Harami (Inside Bar - Corpo da vela 1 totalmente dentro da vela 2)
+            is_harami_bull = bear2 and bull1 and (o1 >= c2) and (c1 <= o2) and (body1 < body2)
+            is_harami_bear = bull2 and bear1 and (o1 <= c2) and (c1 >= o2) and (body1 < body2)
+
+            # 3: Piercing Line (Alta) e Dark Cloud Cover (Baixa)
+            # A vela 1 rompe a mínima/máxima anterior, mas fecha cobrindo mais de 50% da vela 2
+            is_piercing_line = bear2 and bull1 and (o1 <= c2) and (c1 >= midpoint_2) and (c1 <= o2)
+            is_dark_cloud = bull2 and bear1 and (o1 >= c2) and (c1 <= midpoint_2) and (c1 >= o2)
+
+            # 4: Fundo e Topo em Pinça (Tweezer)
+            # As mínimas (para compra) ou máximas (para venda) das duas velas são quase idênticas
+            # Usa uma margem de tolerância de 10% do tamanho da vela para absorver o ruído do mercado
+            is_tweezer_bottom = bear2 and bull1 and (abs(l1 - l2) <= (avg_size1 * 0.1)) and (body1 > self.epsilon)
+            is_tweezer_top = bull2 and bear1 and (abs(h1 - h2) <= (avg_size1 * 0.1)) and (body1 > self.epsilon)
+
+            # 5: Linha de Cinturão (Belt Hold)
+            # Vela de força que não deixa pavio contra o movimento (Abertura = Mínima/Máxima)
+            is_belt_hold_bull = bear2 and bull1 and (lower_wick1 <= self.epsilon) and (body1 >= avg_size1 * 0.8)
+            is_belt_hold_bear = bull2 and bear1 and (upper_wick1 <= self.epsilon) and (body1 >= avg_size1 * 0.8)
+
+            # Definindo o Padrão de Alta Identificado
+            if bullish_engulf:
+                bullish_pattern = "Engolfo de Alta"
+            elif is_hammer:
+                bullish_pattern = "Martelo (Pin Bar)"
+            elif is_marubozu_bull:
+                bullish_pattern = "Marubozu de Alta"
+            elif is_belt_hold_bull:
+                bullish_pattern = "Cinturão de Alta"
+            elif is_harami_bull:
+                bullish_pattern = "Harami de Alta"
+            elif is_piercing_line:
+                bullish_pattern = "Linha de Perfuração"
+            elif is_tweezer_bottom:
+                bullish_pattern = "Fundo em Pinça"
+            else:
+                bullish_pattern = None
+
+            # Definindo o Padrão de Baixa Identificado
+            if bearish_engulf:
+                bearish_pattern = "Engolfo de Baixa"
+            elif is_shooting_star:
+                bearish_pattern = "Estrela Cadente (Pin Bar)"
+            elif is_marubozu_bear:
+                bearish_pattern = "Marubozu de Baixa"
+            elif is_belt_hold_bear:
+                bearish_pattern = "Cinturão de Baixa"
+            elif is_harami_bear:
+                bearish_pattern = "Harami de Baixa"
+            elif is_dark_cloud:
+                bearish_pattern = "Nuvem Negra"
+            elif is_tweezer_top:
+                bearish_pattern = "Topo em Pinça"
+            else:
+                bearish_pattern = None
+        
+
+            # Alinhamento Triplo de Tendência (As 3 SMMAs alinhadas com o preço)
             trend_up = ((c1 > smma_long1) and (smma_medium1 > smma_long1) and (smma_short1 > smma_medium1)) if use_trend else True
             trend_down = ((c1 < smma_long1) and (smma_medium1 < smma_long1) and (smma_short1 < smma_medium1)) if use_trend else True
 
-            # NOVO: 5) Lógica da Média Curta (Usa agora a SMMA Curta)
+            # Lógica da Média Curta (Usa agora a SMMA Curta)
             ma_ok_buy = False
             ma_ok_sell = False
             
@@ -212,24 +283,24 @@ class EngulfMAStrategy(BaseStrategy):
                 ma_ok_buy = (l1 <= smma_short1 + self.epsilon) and (c1 > smma_short1 + self.epsilon)
                 ma_ok_sell = (h1 >= smma_short1 - self.epsilon) and (c1 < smma_short1 - self.epsilon)
                 
-            # 6) Filtro de Exaustão (RSI)
+            # Filtro de Exaustão (RSI)
             rsi_ok_buy = rsi1 < self.rsi_pullback_buy
             rsi_ok_sell = rsi1 > self.rsi_pullback_sell
             
-            # NOVO: 7) Confluência de Sinais MÁXIMA - Inclusão do volume_ok e trend_strength_ok
+            # Confluência de Sinais MÁXIMA - Inclusão do volume_ok e trend_strength_ok
             is_buy = bullish_pattern and ma_ok_buy and trend_up and rsi_ok_buy and volatility_ok and volume_ok and trend_strength_ok
             is_sell = bearish_pattern and ma_ok_sell and trend_down and rsi_ok_sell and volatility_ok and volume_ok and trend_strength_ok
             
             if is_buy:
                 self.last_signal_time = current_candle_time
-                # NOVO: Adicionado um log detalhado para você acompanhar o ADX da entrada no Telegram/Console
+                # Adicionado um log detalhado para você acompanhar o ADX da entrada no Telegram/Console
                 log_msg = f"🔥 [PRO] COMPRA: {bullish_pattern} validado em {self.symbol}! (Vol: OK, ADX: {adx1:.1f})"
                 logger.info(log_msg)
                 return "BUY", log_msg
                 
             elif is_sell:
                 self.last_signal_time = current_candle_time
-                # NOVO: Adicionado um log detalhado para você acompanhar o ADX da entrada no Telegram/Console
+                # Adicionado um log detalhado para você acompanhar o ADX da entrada no Telegram/Console
                 log_msg = f"🔥 [PRO] VENDA: {bearish_pattern} validado em {self.symbol}! (Vol: OK, ADX: {adx1:.1f})"
                 logger.info(log_msg)
                 return "SELL", log_msg
