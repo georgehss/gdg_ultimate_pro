@@ -26,7 +26,7 @@ class EngulfMAStrategy(BaseStrategy):
         
         self.trade_amount = 1.0
         self.trade_duration = "01:00"
-        self.last_signal_time = None 
+        self.last_signal_time = None      
 
     def _apply_profile_settings(self):
         self.rsi_period = 14
@@ -59,32 +59,51 @@ class EngulfMAStrategy(BaseStrategy):
             self.volume_mult = 0.5          # Aceita entrar com metade do volume da vela anterior
 
         elif self.profile == "Customizado" and self.custom_params:
-            # Valores base seguros
-            self.short_ma_period = 8        # Período da SMMA curta
-            self.medium_ma_period = 59      # Período da SMMA média
-            self.long_ma_period = 200       # Período da SMMA longa
-            self.epsilon = 0.0              # Sem tolerância extra (Exige cobertura exata 1 para 1)
-            
-            # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 18               # Nível mínimo de força de tendência (ADX)
-            self.volatility_mult = 0.8      # A vela deve ter no mínimo 80% do tamanho médio
-            self.rsi_pullback_buy = 60      # Teto máximo do RSI para validar uma COMPRA
-            self.rsi_pullback_sell = 40     # Piso mínimo do RSI para validar uma VENDA
-            self.volume_mult = 1.0          # O volume de engolfo deve ser no mínimo igual ao volume engolfado
+            # Valores base
+            self.short_ma_period = 8        
+            self.medium_ma_period = 59      
+            self.long_ma_period = 200       
+            self.epsilon = 0.0              
+            self.min_adx = 18               
+            self.volatility_mult = 0.8      
+            self.rsi_pullback_buy = 60      
+            self.rsi_pullback_sell = 40     
+            self.volume_mult = 1.0          
+
+            logger.info("⚙️ Carregando Perfil Customizado definido via Telegram...")
 
             try:
-                # Divide a string e converte consoante o tipo de dado esperado
                 valores = [v.strip() for v in self.custom_params.split(',')]
-                if len(valores) >= 1: self.short_ma_period = int(valores[0])
-                if len(valores) >= 2: self.medium_ma_period = int(valores[1])
-                if len(valores) >= 3: self.long_ma_period = int(valores[2])
-                if len(valores) >= 4: self.min_adx = int(valores[3])
-                if len(valores) >= 5: self.volatility_mult = float(valores[4])
-                if len(valores) >= 6: self.rsi_pullback_buy = int(valores[5])
-                if len(valores) >= 7: self.rsi_pullback_sell = int(valores[6])
-                if len(valores) >= 8: self.volume_mult = float(valores[7])
-            except ValueError:
-                pass # Em caso de erro de digitação, cai de pé nos valores base
+                
+                if len(valores) >= 1 and valores[0]:
+                    self.short_ma_period = int(valores[0])
+                    logger.info(f" └─ Filtro [1/8] Média Móvel Curta -> {self.short_ma_period}")
+                if len(valores) >= 2 and valores[1]:
+                    self.medium_ma_period = int(valores[1])
+                    logger.info(f" └─ Filtro [2/8] Média Móvel Média -> {self.medium_ma_period}")
+                if len(valores) >= 3 and valores[2]:
+                    self.long_ma_period = int(valores[2])
+                    logger.info(f" └─ Filtro [3/8] Média Móvel Longa -> {self.long_ma_period}")
+                if len(valores) >= 4 and valores[3]:
+                    self.min_adx = int(valores[3])
+                    logger.info(f" └─ Filtro [4/8] ADX Mínimo (Tendência) -> {self.min_adx}")
+                if len(valores) >= 5 and valores[4]:
+                    self.volatility_mult = float(valores[4])
+                    logger.info(f" └─ Filtro [5/8] Multiplicador Volatilidade -> {self.volatility_mult}")
+                if len(valores) >= 6 and valores[5]:
+                    self.rsi_pullback_buy = int(valores[5])
+                    logger.info(f" └─ Filtro [6/8] Teto Máximo RSI Compra -> {self.rsi_pullback_buy}")
+                if len(valores) >= 7 and valores[6]:
+                    self.rsi_pullback_sell = int(valores[6])
+                    logger.info(f" └─ Filtro [7/8] Piso Mínimo RSI Venda -> {self.rsi_pullback_sell}")
+                if len(valores) >= 8 and valores[7]:
+                    self.volume_mult = float(valores[7])
+                    logger.info(f" └─ Filtro [8/8] Multiplicador de Volume -> {self.volume_mult}")
+
+                logger.info("✅ Perfil Customizado verificado e pronto para operar.")
+
+            except (ValueError, IndexError) as e:
+                logger.error(f"⚠️ Falha na conversão dos parâmetros ({e}). Aplicando fallbacks seguros.")
             
         else: # Balanceado (Padrão)
             self.short_ma_period = 8        # SMMA curta padrão (Aceleração)

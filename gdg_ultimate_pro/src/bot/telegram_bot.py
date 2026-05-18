@@ -17,6 +17,12 @@ class TradingTelegramBot:
         self.setup_event = asyncio.Event()
         self.stop_session_event = asyncio.Event() 
         
+        # === VARIÁVEIS DO NOVO QUESTIONÁRIO ===
+        self.custom_param_index = 0
+        self.temp_custom_params = []
+        self.custom_questions = []
+        # ======================================
+        
         self.user_config = {
             "is_demo": True,
             "mode": "strategy",
@@ -189,41 +195,79 @@ class TradingTelegramBot:
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')]
             ]
 
-        elif self.setup_step == "wait_custom_params":
+        elif self.setup_step == "custom_params_q":
+            idx = self.custom_param_index
+            pergunta, padrao, tipo = self.custom_questions[idx]
+            
             text = (
-                "✍️ *Configuração Customizada*\n\n"
-                "Digite os parâmetros que deseja usar separados por vírgula. "
-                "Pode digitar apenas os primeiros se quiser manter o resto como padrão.\n\n"
-                "📌 *Ordem de Inserção:*\n\n"
-                "▫️ *RSI:* `RSI Per, O.Bought, O.Sold, SMMA Long, EMA Curta, ADX Min, Vol Mult, Volm Mult, BB Std`\n"
-                "👉 *Ex:* `14, 70, 30, 100, 9, 20, 0.7, 1.0, 2.0`\n\n"
-                "▫️ *MA Cross:* `EMA Rápida, EMA Lenta, SMMA Long, Cooldown, ATR Mult, ADX Min, Volm Mult, RSI Max Compra, RSI Min Venda`\n"
-                "👉 *Ex:* `9, 21, 100, 3, 0.15, 20, 1.0, 65, 35`\n\n"
-                "▫️ *Engolfo MA:* `SMMA Curta, SMMA Média, SMMA Long, ADX Min, Vol Mult, RSI Pullback C, RSI Pullback V, Volm Mult`\n"
-                "👉 *Ex:* `8, 59, 200, 18, 0.8, 60, 40, 1.0`\n\n"
-                "Escreva os seus valores agora:"
+                f"✍️ *Configuração Customizada [{idx+1}/{len(self.custom_questions)}]*\n\n"
+                f"🔹 *{pergunta}*\n"
+                f"👉 Valor Padrão Recomendado: `{padrao}`\n\n"
+                f"Digite o valor desejado no chat ou clique no botão abaixo para manter o padrão:"
             )
-            keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data='back_profile')]]
+            keyboard = [
+                [InlineKeyboardButton(f"✅ Manter Padrão ({padrao})", callback_data='custom_keep_default')],
+                [InlineKeyboardButton("⬅️ Cancelar e Recomeçar", callback_data='back_profile')]
+            ]
 
         elif self.setup_step == "filters_menu":
-            text = "🎛️ *Filtros Institucionais*\nAtive ou desative os filtros de segurança.\nClique para alterar (✅ = Ligado / ❌ = Desligado) e depois em Continuar:"
+            text = "🎛️ *Filtros Institucionais*\nAtive ou desative os filtros de segurança específicos da sua estratégia.\nClique para alterar (✅ = Ligado / ❌ = Desligado) e depois em Continuar:"
             
-            # Pega o estado atual dos filtros
+            # Garante que o dicionário de filtros exista com os valores padrão
             f = self.user_config.setdefault("active_filters", {"adx": True, "volume": True, "trend": True, "bb": True, "atr": True, "slope": True})
             
-            btn_adx = "✅ ADX (Força)" if f["adx"] else "❌ ADX (Força)"
-            btn_vol = "✅ Volume" if f["volume"] else "❌ Volume"
-            btn_trend = "✅ Macro Tendência" if f["trend"] else "❌ Macro Tendência"
-            btn_bb = "✅ Bollinger (RSI)" if f["bb"] else "❌ Bollinger (RSI)"
-            btn_atr = "✅ Separação ATR" if f["atr"] else "❌ Separação ATR"
-            btn_slope = "✅ Inclinação MA" if f["slope"] else "❌ Inclinação MA"
+            # 1) Mapeamento de quais filtros pertencem a cada estratégia
+            modo_atual = self.user_config.get("mode", "strategy")
+            filtros_visiveis = []
 
-            keyboard = [
-                [InlineKeyboardButton(btn_adx, callback_data='flt_adx'), InlineKeyboardButton(btn_vol, callback_data='flt_volume')],
-                [InlineKeyboardButton(btn_trend, callback_data='flt_trend'), InlineKeyboardButton(btn_bb, callback_data='flt_bb')],
-                [InlineKeyboardButton(btn_atr, callback_data='flt_atr'), InlineKeyboardButton(btn_slope, callback_data='flt_slope')],
-                [InlineKeyboardButton("⬅️ Voltar", callback_data='back_filters_menu'), InlineKeyboardButton("➡️ Continuar", callback_data='flt_done')]
-            ]
+            if modo_atual == "strat_engulf":
+                filtros_visiveis = ["adx", "volume", "trend"]
+            elif modo_atual == "strat_ma":
+                filtros_visiveis = ["adx", "volume", "atr", "slope"]
+            elif modo_atual == "strat_rsi":
+                filtros_visiveis = ["bb", "volume"]
+            elif modo_atual == "strat_consensus":
+                # No consenso, mostramos os filtros combinados de todas as lógicas ativas na votação
+                ativas = self.user_config.get("active_strategies", [])
+                if "rsi" in ativas:
+                    filtros_visiveis.extend(["bb", "volume"])
+                if "ma" in ativas:
+                    filtros_visiveis.extend(["adx", "volume", "atr", "slope"])
+                if "engulf" in ativas:
+                    filtros_visiveis.extend(["adx", "volume", "trend"])
+                # Remove chaves duplicadas mantendo a organização visual
+                filtros_visiveis = list(dict.fromkeys(filtros_visiveis))
+            else:
+                # Fallback de segurança para exibir tudo caso seja um modo genérico/Live
+                filtros_visiveis = ["adx", "volume", "trend", "bb", "atr", "slope"]
+
+            # Nomes de exibição amigáveis para cada chave técnica
+            nomes_filtros = {
+                "adx": "ADX (Força)",
+                "volume": "Volume",
+                "trend": "Macro Tendência",
+                "bb": "Bollinger (RSI)",
+                "atr": "Separação ATR",
+                "slope": "Inclinação MA"
+            }
+
+            # 2) Constrói a lista de botões ativos sequencialmente
+            botoes_dinamicos = []
+            for filtro_key in filtros_visiveis:
+                status_icon = "✅" if f.get(filtro_key, True) else "❌"
+                label_botao = f"{status_icon} {nomes_filtros[filtro_key]}"
+                botoes_dinamicos.append(InlineKeyboardButton(label_botao, callback_data=f'flt_{filtro_key}'))
+
+            # 3) Organiza os botões em linhas de 2 em 2 automaticamente
+            keyboard = []
+            for i in range(0, len(botoes_dinamicos), 2):
+                keyboard.append(botoes_dinamicos[i:i+2])
+
+            # Adiciona os botões de controle de navegação no final do menu
+            keyboard.append([
+                InlineKeyboardButton("⬅️ Voltar", callback_data='back_filters_menu'), 
+                InlineKeyboardButton("➡️ Continuar", callback_data='flt_done')
+            ])
 
         elif self.setup_step == "timeframe":
             text = "📊 *Tempo de Análise (Timeframe)*\nQual o tempo gráfico das velas para o robô analisar?"
@@ -450,10 +494,7 @@ class TradingTelegramBot:
             elif step == 'timeframe':
                 self.setup_step = 'filters_menu' 
             elif step == 'filters_menu':
-                if self.user_config.get("profile") == "Customizado":
-                    self.setup_step = 'wait_custom_params'
-                else:
-                    self.setup_step = 'profile'
+                self.setup_step = 'profile'
             elif step == 'amount':
                 self.setup_step = 'duration'
             elif step == 'martingale_type':
@@ -524,9 +565,60 @@ class TradingTelegramBot:
                 
         elif data.startswith('prof_'):
             self.user_config["profile"] = data.split('_')[1]
+            
             if self.user_config["profile"] == "Customizado":
-                self.setup_step = "wait_custom_params"
+                modo_atual = self.user_config.get("mode", "strategy")
+                
+                # Monta as perguntas dependendo da estratégia escolhida
+                if modo_atual == "strat_rsi":
+                    self.custom_questions = [
+                        ("Período do RSI", "14", "int"),
+                        ("Nível de Sobrecompra (Teto)", "70", "int"),
+                        ("Nível de Sobrevenda (Piso)", "30", "int"),
+                        ("Período da SMMA Longa (Filtro Macro)", "100", "int"),
+                        ("Período da EMA Curta", "9", "int"),
+                        ("Nível Mínimo do ADX (Força)", "20", "int"),
+                        ("Multiplicador de Volatilidade", "0.7", "float"),
+                        ("Multiplicador de Volume (Ignição)", "1.0", "float"),
+                        ("Desvio Padrão Bollinger", "2.0", "float")
+                    ]
+                elif modo_atual == "strat_ma":
+                    self.custom_questions = [
+                        ("Período EMA Rápida", "9", "int"),
+                        ("Período EMA Lenta", "21", "int"),
+                        ("Período da SMMA Longa (Filtro Macro)", "100", "int"),
+                        ("Cooldown (Velas de espera)", "3", "int"),
+                        ("Multiplicador ATR (Afastamento)", "0.15", "float"),
+                        ("Nível Mínimo do ADX (Força)", "20", "int"),
+                        ("Multiplicador de Volume (Ignição)", "1.0", "float"),
+                        ("RSI Máximo para Comprar", "65", "int"),
+                        ("RSI Mínimo para Vender", "35", "int")
+                    ]
+                else: # Default: Engolfo / Price Action
+                    self.custom_questions = [
+                        ("Período da SMMA Curta (Aceleração)", "8", "int"),
+                        ("Período da SMMA Média (Tendência)", "59", "int"),
+                        ("Período da SMMA Longa (Macro)", "200", "int"),
+                        ("Nível Mínimo do ADX (Força)", "18", "int"),
+                        ("Multiplicador de Volatilidade (Tamanho)", "0.8", "float"),
+                        ("Teto Máximo do RSI para COMPRA", "60", "int"),
+                        ("Piso Mínimo do RSI para VENDA", "40", "int"),
+                        ("Multiplicador de Volume (vs anterior)", "1.0", "float")
+                    ]
+                
+                self.setup_step = "custom_params_q"
+                self.custom_param_index = 0
+                self.temp_custom_params = []
             else:
+                self.setup_step = "filters_menu"
+
+        elif data == 'custom_keep_default':
+            padrao = self.custom_questions[self.custom_param_index][1]
+            self.temp_custom_params.append(padrao)
+            self.custom_param_index += 1
+            
+            if self.custom_param_index >= len(self.custom_questions):
+                self.user_config["custom_params"] = ", ".join(self.temp_custom_params)
                 self.setup_step = "filters_menu"
 
         elif data.startswith('flt_'):
@@ -602,11 +694,33 @@ class TradingTelegramBot:
     async def text_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_auth(update): return
         
-        if self.setup_step == "wait_custom_params":
-            self.user_config["custom_params"] = update.message.text.strip()
-            self.setup_step = "filters_menu" # <-- MUDE ISTO (antes ia pro timeframe)
-            await self.send_setup_step(update.message, is_edit=False)
-
+        if self.setup_step == "custom_params_q":
+            texto = update.message.text.strip().replace(',', '.')
+            idx = self.custom_param_index
+            _, _, tipo = self.custom_questions[idx]
+            
+            try:
+                # Valida se o usuário digitou corretamente
+                if tipo == "int":
+                    val = str(int(texto))
+                else:
+                    val = str(float(texto))
+                
+                # Salva e avança
+                self.temp_custom_params.append(val)
+                self.custom_param_index += 1
+                
+                if self.custom_param_index >= len(self.custom_questions):
+                    self.user_config["custom_params"] = ", ".join(self.temp_custom_params)
+                    self.setup_step = "filters_menu"
+                    await self.send_setup_step(update.message, is_edit=False)
+                else:
+                    await self.send_setup_step(update.message, is_edit=False)
+                    
+            except ValueError:
+                tipo_str = "número inteiro (ex: 8)" if tipo == "int" else "número decimal (ex: 1.5)"
+                await update.message.reply_text(f"⚠️ Valor inválido! Por favor, digite um {tipo_str}.")
+                
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not await self.check_auth(update): return
         

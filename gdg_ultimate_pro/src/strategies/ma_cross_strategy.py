@@ -67,33 +67,53 @@ class MACrossStrategy(BaseStrategy):
 
         elif self.profile == "Customizado" and self.custom_params:
             # Valores base seguros
-            self.fast_period = 5            # EMA Rápida
-            self.slow_period = 14           # EMA Lenta base
-            self.long_ma_period = 59        # Filtro SMMA de macrotendência
-            self.cooldown_bars = 3          # Velas de "geladeira" para abafar ruído pós-sinal
-            self.use_slope = True           # Verifica se há inclinação confirmando a direção
-            self.use_atr_sep = True         # Exige distanciamento após o cruzamento
-            
-            # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.atr_sep_mult = 0.15        # Multiplicador do ATR que define a separação mínima exigida
-            self.min_adx = 20               # Nível mínimo de ADX (Força da tendência)
-            self.volume_mult = 1.0          # O volume da vela de cruzamento deve ser igual ou maior à média (SMA20)
-            self.rsi_max_buy = 65           # Limite superior de Momentum para permitir compra
-            self.rsi_min_sell = 35          # Limite inferior de Momentum para permitir venda
+            self.fast_period = 5
+            self.slow_period = 14
+            self.long_ma_period = 59
+            self.cooldown_bars = 3
+            self.atr_multiplier = 0.15
+            self.min_adx = 20
+            self.volume_mult = 1.0
+            self.rsi_max_buy = 65
+            self.rsi_min_sell = 35
+
+            logger.info("⚙️ Carregando Perfil Customizado definido via Telegram...")
 
             try:
                 valores = [v.strip() for v in self.custom_params.split(',')]
-                if len(valores) >= 1: self.fast_period = int(valores[0])
-                if len(valores) >= 2: self.slow_period = int(valores[1])
-                if len(valores) >= 3: self.long_ma_period = int(valores[2])
-                if len(valores) >= 4: self.cooldown_bars = int(valores[3])
-                if len(valores) >= 5: self.atr_sep_mult = float(valores[4])
-                if len(valores) >= 6: self.min_adx = int(valores[5])
-                if len(valores) >= 7: self.volume_mult = float(valores[6])
-                if len(valores) >= 8: self.rsi_max_buy = int(valores[7])
-                if len(valores) >= 9: self.rsi_min_sell = int(valores[8])
-            except ValueError:
-                pass
+                
+                if len(valores) >= 1 and valores[0]:
+                    self.fast_period = int(valores[0])
+                    logger.info(f" └─ Filtro [1/9] Período EMA Rápida -> {self.fast_period}")
+                if len(valores) >= 2 and valores[1]:
+                    self.slow_period = int(valores[1])
+                    logger.info(f" └─ Filtro [2/9] Período EMA Lenta -> {self.slow_period}")
+                if len(valores) >= 3 and valores[2]:
+                    self.long_ma_period = int(valores[2])
+                    logger.info(f" └─ Filtro [3/9] Período SMMA Longa -> {self.long_ma_period}")
+                if len(valores) >= 4 and valores[3]:
+                    self.cooldown_bars = int(valores[3])
+                    logger.info(f" └─ Filtro [4/9] Cooldown (Velas) -> {self.cooldown_bars}")
+                if len(valores) >= 5 and valores[4]:
+                    self.atr_multiplier = float(valores[4])
+                    logger.info(f" └─ Filtro [5/9] Multiplicador ATR -> {self.atr_multiplier}")
+                if len(valores) >= 6 and valores[5]:
+                    self.min_adx = int(valores[5])
+                    logger.info(f" └─ Filtro [6/9] ADX Mínimo -> {self.min_adx}")
+                if len(valores) >= 7 and valores[6]:
+                    self.volume_mult = float(valores[6])
+                    logger.info(f" └─ Filtro [7/9] Multiplicador de Volume -> {self.volume_mult}")
+                if len(valores) >= 8 and valores[7]:
+                    self.rsi_max_buy = int(valores[7])
+                    logger.info(f" └─ Filtro [8/9] RSI Máximo para Compra -> {self.rsi_max_buy}")
+                if len(valores) >= 9 and valores[8]:
+                    self.rsi_min_sell = int(valores[8])
+                    logger.info(f" └─ Filtro [9/9] RSI Mínimo para Venda -> {self.rsi_min_sell}")
+
+                logger.info("✅ Perfil Customizado verificado e pronto para operar.")
+
+            except (ValueError, IndexError) as e:
+                logger.error(f"⚠️ Falha na conversão dos parâmetros ({e}). Aplicando fallbacks seguros.")
 
         else: # Balanceado (Padrão Original)
             self.fast_period = 5            # EMA Rápida clássica de scalp

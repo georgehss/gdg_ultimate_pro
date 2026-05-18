@@ -63,34 +63,54 @@ class RSIStrategy(BaseStrategy):
             self.bb_std = 1.8               # Bandas de Bollinger mais estreitas (são perfuradas mais facilmente)
 
         elif self.profile == "Customizado" and self.custom_params:
-            # Valores base seguros (Caso o utilizador não preencha tudo)
-            self.rsi_period = 14            # Período de cálculo do RSI
-            self.rsi_overbought = 70        # Linha superior (Sobrecompra)
-            self.rsi_oversold = 30          # Linha inferior (Sobrevenda)
-            self.long_ma_period = 100       # Período da SMMA para filtro de macrotendência
-            self.ema_period = 9             # Período da EMA curta para direção do micro-movimento
-            self.entry_mode = "CROSSBACK"   # 'TOUCH' (Tocou, entra) ou 'CROSSBACK' (Espera cruzar de volta)
-            self.confirm_candle = True      # Exige que a cor da vela confirme a direção da operação
-            
-            # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 20               # Exige uma tendência direcional moderada/forte ativa
-            self.volatility_mult = 0.7      # A vela deve ter no mínimo 70% da volatilidade média recente
-            self.volume_mult = 1.0          # O volume da reversão deve ser pelo menos igual ao da vela anterior
-            self.bb_std = 2.0               # Multiplicador de desvio padrão das Bandas de Bollinger
+            # Valores base seguros
+            self.rsi_period = 14
+            self.rsi_overbought = 70
+            self.rsi_oversold = 30
+            self.long_ma_period = 100
+            self.short_ema_period = 9
+            self.min_adx = 20
+            self.volatility_mult = 0.7
+            self.volume_mult = 1.0
+            self.bb_std = 2.0
+
+            logger.info("⚙️ Carregando Perfil Customizado definido via Telegram...")
 
             try:
                 valores = [v.strip() for v in self.custom_params.split(',')]
-                if len(valores) >= 1: self.rsi_period = int(valores[0])
-                if len(valores) >= 2: self.rsi_overbought = int(valores[1])
-                if len(valores) >= 3: self.rsi_oversold = int(valores[2])
-                if len(valores) >= 4: self.long_ma_period = int(valores[3])
-                if len(valores) >= 5: self.ema_period = int(valores[4])
-                if len(valores) >= 6: self.min_adx = int(valores[5])
-                if len(valores) >= 7: self.volatility_mult = float(valores[6])
-                if len(valores) >= 8: self.volume_mult = float(valores[7])
-                if len(valores) >= 9: self.bb_std = float(valores[8])
-            except ValueError:
-                pass
+                
+                if len(valores) >= 1 and valores[0]:
+                    self.rsi_period = int(valores[0])
+                    logger.info(f" └─ Filtro [1/9] Período do RSI -> {self.rsi_period}")
+                if len(valores) >= 2 and valores[1]:
+                    self.rsi_overbought = int(valores[1])
+                    logger.info(f" └─ Filtro [2/9] Nível de Sobrecompra -> {self.rsi_overbought}")
+                if len(valores) >= 3 and valores[2]:
+                    self.rsi_oversold = int(valores[2])
+                    logger.info(f" └─ Filtro [3/9] Nível de Sobrevenda -> {self.rsi_oversold}")
+                if len(valores) >= 4 and valores[3]:
+                    self.long_ma_period = int(valores[3])
+                    logger.info(f" └─ Filtro [4/9] Período da SMMA Longa -> {self.long_ma_period}")
+                if len(valores) >= 5 and valores[4]:
+                    self.short_ema_period = int(valores[4])
+                    logger.info(f" └─ Filtro [5/9] Período da EMA Curta -> {self.short_ema_period}")
+                if len(valores) >= 6 and valores[5]:
+                    self.min_adx = int(valores[5])
+                    logger.info(f" └─ Filtro [6/9] ADX Mínimo -> {self.min_adx}")
+                if len(valores) >= 7 and valores[6]:
+                    self.volatility_mult = float(valores[6])
+                    logger.info(f" └─ Filtro [7/9] Multiplicador Volatilidade -> {self.volatility_mult}")
+                if len(valores) >= 8 and valores[7]:
+                    self.volume_mult = float(valores[7])
+                    logger.info(f" └─ Filtro [8/9] Multiplicador de Volume -> {self.volume_mult}")
+                if len(valores) >= 9 and valores[8]:
+                    self.bb_std = float(valores[8])
+                    logger.info(f" └─ Filtro [9/9] Desvio Padrão Bollinger -> {self.bb_std}")
+
+                logger.info("✅ Perfil Customizado verificado e pronto para operar.")
+
+            except (ValueError, IndexError) as e:
+                logger.error(f"⚠️ Falha na conversão dos parâmetros ({e}). Aplicando fallbacks seguros.")
 
         else: # Balanceado (Padrão Original)
             # Parâmetros de Período Básicos
