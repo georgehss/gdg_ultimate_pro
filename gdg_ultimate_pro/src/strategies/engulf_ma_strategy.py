@@ -287,9 +287,34 @@ class EngulfMAStrategy(BaseStrategy):
             rsi_ok_buy = rsi1 < self.rsi_pullback_buy
             rsi_ok_sell = rsi1 > self.rsi_pullback_sell
             
-            # Confluência de Sinais MÁXIMA - Inclusão do volume_ok e trend_strength_ok
-            is_buy = bullish_pattern and ma_ok_buy and trend_up and rsi_ok_buy and volatility_ok and volume_ok and trend_strength_ok
-            is_sell = bearish_pattern and ma_ok_sell and trend_down and rsi_ok_sell and volatility_ok and volume_ok and trend_strength_ok
+            # ----------------------------------------------------
+            # Confluência de Sinais MÁXIMA (Inteligente)
+            # ----------------------------------------------------
+            
+            # Padrões de "Explosão" (precisam de muito volume e volatilidade confirmando o rompimento)
+            padroes_explosao_alta = ["Engolfo de Alta", "Marubozu de Alta", "Cinturão de Alta", "Linha de Perfuração"]
+            padroes_explosao_baixa = ["Engolfo de Baixa", "Marubozu de Baixa", "Cinturão de Baixa", "Nuvem Negra"]
+            
+            # Adapta os filtros dependendo da assinatura do padrão de Price Action
+            if bullish_pattern in padroes_explosao_alta:
+                vol_buy_ok = volatility_ok
+                volm_buy_ok = volume_ok
+            else:
+                # Se for Harami, Martelo ou Pinça (padrões de absorção/descanso), relaxamos a exigência de tamanho e volume
+                vol_buy_ok = True
+                volm_buy_ok = True
+                
+            if bearish_pattern in padroes_explosao_baixa:
+                vol_sell_ok = volatility_ok
+                volm_sell_ok = volume_ok
+            else:
+                vol_sell_ok = True
+                volm_sell_ok = True
+
+            # Validação Final da Entrada
+            is_buy = bullish_pattern and ma_ok_buy and trend_up and rsi_ok_buy and vol_buy_ok and volm_buy_ok and trend_strength_ok
+            is_sell = bearish_pattern and ma_ok_sell and trend_down and rsi_ok_sell and vol_sell_ok and volm_sell_ok and trend_strength_ok
+            #----------------------------------------------------------------------------------------------
             
             if is_buy:
                 self.last_signal_time = current_candle_time
