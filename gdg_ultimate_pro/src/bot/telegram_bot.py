@@ -314,10 +314,11 @@ class TradingTelegramBot:
             keyboard = [
                 [InlineKeyboardButton("$ 1", callback_data='amt_1'),
                  InlineKeyboardButton("$ 2", callback_data='amt_2'),
-                 InlineKeyboardButton("$ 3", callback_data='amt_3')],
+                 InlineKeyboardButton("$ 4", callback_data='amt_4')],
                 [InlineKeyboardButton("$ 5", callback_data='amt_5'),
                  InlineKeyboardButton("$ 10", callback_data='amt_10'),
-                 InlineKeyboardButton("$ 20", callback_data='amt_20')],
+                 InlineKeyboardButton("$ 15", callback_data='amt_15')],
+                [InlineKeyboardButton("$ 20", callback_data='amt_20')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_amount')]
             ]
 
@@ -369,11 +370,13 @@ class TradingTelegramBot:
             text = "🎯 *Meta de Lucro (Take Profit)*\nAo atingir que lucro o bot deve parar hoje?"
             keyboard = [
                 [InlineKeyboardButton("$ 2", callback_data='tp_2.0'),
-                 InlineKeyboardButton("$ 3", callback_data='tp_3.0'),
+                 InlineKeyboardButton("$ 4", callback_data='tp_4.0'),
                  InlineKeyboardButton("$ 5", callback_data='tp_5.0')],
                 [InlineKeyboardButton("$ 10", callback_data='tp_10.0'),
-                 InlineKeyboardButton("$ 20", callback_data='tp_20.0')],
-                [InlineKeyboardButton("$ 50", callback_data='tp_50.0'),
+                 InlineKeyboardButton("$ 12", callback_data='tp_12.0'),
+                 InlineKeyboardButton("$ 15", callback_data='tp_15.0')],
+                [InlineKeyboardButton("$ 20", callback_data='tp_20.0'),
+                 InlineKeyboardButton("$ 30", callback_data='tp_30.0'),
                  InlineKeyboardButton("$ 100", callback_data='tp_100.0')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_take_profit')]
             ]
@@ -381,13 +384,15 @@ class TradingTelegramBot:
         elif self.setup_step == "stop_loss":
             text = "🛑 *Limite de Perda (Stop Loss)*\nAo atingir que prejuízo o bot deve parar hoje para proteger a banca?"
             keyboard = [
-                [InlineKeyboardButton("-$ 2", callback_data='sl_-2.0'),
-                 InlineKeyboardButton("-$ 3", callback_data='sl_-3.0'),
-                 InlineKeyboardButton("-$ 5", callback_data='sl_-5.0')],
-                [InlineKeyboardButton("-$ 10", callback_data='sl_-10.0'),
-                 InlineKeyboardButton("-$ 20", callback_data='sl_-20.0')],
-                [InlineKeyboardButton("-$ 50", callback_data='sl_-50.0'),
-                 InlineKeyboardButton("-$ 100", callback_data='sl_-100.0')],
+                [InlineKeyboardButton("$ 2", callback_data='tp_2.0'),
+                 InlineKeyboardButton("$ 4", callback_data='tp_4.0'),
+                 InlineKeyboardButton("$ 5", callback_data='tp_5.0')],
+                [InlineKeyboardButton("$ 10", callback_data='tp_10.0'),
+                 InlineKeyboardButton("$ 12", callback_data='tp_12.0'),
+                 InlineKeyboardButton("$ 15", callback_data='tp_15.0')],
+                [InlineKeyboardButton("$ 20", callback_data='tp_20.0'),
+                 InlineKeyboardButton("$ 30", callback_data='tp_30.0'),
+                 InlineKeyboardButton("$ 100", callback_data='tp_100.0')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_stop_loss')]
             ]
 
@@ -590,15 +595,15 @@ class TradingTelegramBot:
                 ]
                 
                 questions_ma = [
-                    ("Período EMA Rápida", "9", "int", "Média móvel de curto prazo que acompanha o preço de perto para detecção imediata de viradas de fluxo.", "ma"),
-                    ("Período EMA Lenta", "21", "int", "Média móvel de médio prazo. O cruzamento da EMA Rápida sobre esta EMA Lenta determina a mudança oficial da tendência.", "ma"),
-                    ("Período da SMMA Longa (Macro)", "100", "int", "Média protetora institucional. O robô irá ignorar cruzamentos de médias se eles forem contra a direção desta macro-tendência.", "ma"),
+                    ("Período EMA Rápida", "5", "int", "Média móvel de curto prazo que acompanha o preço de perto para detecção imediata de viradas de fluxo.", "ma"),
+                    ("Período EMA Lenta", "14", "int", "Média móvel de médio prazo. O cruzamento da EMA Rápida sobre esta EMA Lenta determina a mudança oficial da tendência.", "ma"),
+                    ("Período da SMMA Longa (Macro)", "23", "int", "Média protetora institucional. O robô irá ignorar cruzamentos de médias se eles forem contra a direção desta macro-tendência.", "ma"),
                     ("Cooldown (Velas de espera)", "3", "int", "Número de velas que o robô deve esperar obrigatoriamente após abrir uma ordem antes de poder analisar um novo sinal neste mesmo ativo.", "ma"),
                     ("Multiplicador ATR (Afastamento)", "0.15", "float", "Usa o indicador ATR (volatilidade) para exigir que as médias se cruzem e se seprem por uma distância segura, filtrando cruzamentos 'falsos' em mercados travados.", "ma"),
                     ("Nível Mínimo do ADX (Força)", "20", "int", "Filtro de tendência. Evita que o robô compre ou venda cruzamentos de médias que ocorram durante consolidações/mercados laterais.", "ma"),
                     ("Multiplicador de Volume (Ignição)", "1.0", "float", "Exige que a vela que gerou o cruzamento venha acompanhada de forte volume de injeção financeira institucional.", "ma"),
-                    ("RSI Máximo para Comprar", "65", "int", "Filtro de segurança. Impede que o robô compre um cruzamento de alta se o mercado já estiver esticado demais no topo (sobrecomprado).", "ma"),
-                    ("RSI Mínimo para Vender", "35", "int", "Filtro de segurança. Impede que o robô venda um cruzamento de baixa se o preço já estiver esticado demais no fundo (sobrevendido).", "ma")
+                    ("RSI Máximo para Comprar", "70", "int", "Filtro de segurança. Impede que o robô compre um cruzamento de alta se o mercado já estiver esticado demais no topo (sobrecomprado).", "ma"),
+                    ("RSI Mínimo para Vender", "30", "int", "Filtro de segurança. Impede que o robô venda um cruzamento de baixa se o preço já estiver esticado demais no fundo (sobrevendido).", "ma")
                 ]
                 
                 questions_engulf = [

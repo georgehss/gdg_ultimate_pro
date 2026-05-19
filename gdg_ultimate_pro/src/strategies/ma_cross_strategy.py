@@ -53,7 +53,7 @@ class MACrossStrategy(BaseStrategy):
         elif self.profile == "Agressivo":
             self.fast_period = 5            # Período da EMA Rápida
             self.slow_period = 14           # Período da EMA Lenta
-            self.long_ma_period = 59        # Filtro SMMA de macrotendência
+            self.long_ma_period = 23        # Filtro SMMA de macrotendência
             self.cooldown_bars = 1          # Quase sem intervalo de segurança entre sinais
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
@@ -69,10 +69,10 @@ class MACrossStrategy(BaseStrategy):
             # Valores base seguros
             self.fast_period = 5
             self.slow_period = 14
-            self.long_ma_period = 59
+            self.long_ma_period = 23
             self.cooldown_bars = 3
             self.atr_sep_mult = 0.15
-            self.min_adx = 18
+            self.min_adx = 20
             self.volume_mult = 1.0
             self.rsi_max_buy = 70
             self.rsi_min_sell = 30
