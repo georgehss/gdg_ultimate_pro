@@ -293,27 +293,36 @@ class HioveBrokerAPI:
                 
             # Se for LOSS, ou se for EMPATE DENTRO DO MARTINGALE:
             elif (status == "LOSS" or (status == "EMPATE" and current_step > 0)) and mg_type != "Nenhum":
-                if current_step < mg_steps:
-                    next_step = current_step + 1
-                    
-                    # === LÓGICA HÍBRIDA (CONSERVADOR VS TRADICIONAL) ===
-                    novo_prejuizo = accumulated_loss + amount
-                    mg_mult = self.user_config.get("martingale_multiplier", 2.0)
-                    
-                    if mg_mult == "Conservador":
-                        payout_decimal = 0.85
-                        try:
-                            if payout != "N/A":
-                                payout_decimal = float(payout.replace('%', '').strip()) / 100.0
-                        except: pass
-                        if payout_decimal < 0.1: payout_decimal = 0.85
-                        
-                        next_amount = round(novo_prejuizo / payout_decimal, 2)
-                        texto_modo = "Conservador"
+                
+                # Verifica se há passos restantes.
+                # O Loss consome 1 passo (< mg_steps). O Empate não consome (<= mg_steps).
+                pode_continuar = (status == "LOSS" and current_step < mg_steps) or (status == "EMPATE" and current_step <= mg_steps)
+                
+                if pode_continuar:
+                    if status == "EMPATE":
+                        # No empate: Congela o passo atual, não aumenta prejuízo, e repete o mesmo valor
+                        next_step = current_step
+                        novo_prejuizo = accumulated_loss
+                        next_amount = amount
+                        texto_modo = "Repetição (Empate)"
                     else:
-                        next_amount = round(amount * float(mg_mult), 2)
-                        texto_modo = f"{mg_mult}x"
-                    # ====================================================
+                        # No loss (normal): Avança o passo e calcula a próxima entrada
+                        next_step = current_step + 1
+                        novo_prejuizo = accumulated_loss + amount
+                        
+                        if mg_mult == "Conservador":
+                            payout_decimal = 0.85
+                            try:
+                                if payout != "N/A":
+                                    payout_decimal = float(payout.replace('%', '').strip()) / 100.0
+                            except: pass
+                            if payout_decimal < 0.1: payout_decimal = 0.85
+                            
+                            next_amount = round(novo_prejuizo / payout_decimal, 2)
+                            texto_modo = "Conservador"
+                        else:
+                            next_amount = round(amount * float(mg_mult), 2)
+                            texto_modo = f"{mg_mult}x"
 
                     if mg_type == "Vela":
                         if cancelar_mg_vela:
@@ -331,12 +340,14 @@ class HioveBrokerAPI:
                     elif mg_type == "Sinal":
                         motivo = "Empate" if status == "EMPATE" else "Loss"
                         
+                        # O modo Global já está devidamente configurado para saltar para o próximo ativo 
+                        # independente de onde ocorreu o gatilho original, bastando enviar para a fila.
                         if mg_signal_mode == "Global":
                             self.martingale_queue.append({'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo})
-                            msg_mg = f"🔄 *Martingale Sinal (Global)* na fila. Prejuízo de ${novo_prejuizo:.2f}. Próxima entrada: ${next_amount:.2f}."
+                            msg_mg = f"🔄 *Martingale Sinal (Global)* na fila por {motivo}. Próxima entrada aguarda o primeiro sinal no mercado: ${next_amount:.2f}."
                         else:
                             self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo}
-                            msg_mg = f"🔄 *Martingale Sinal (Ativo)* preparado. Próximo sinal em {symbol} entrará com ${next_amount:.2f} ({texto_modo})."
+                            msg_mg = f"🔄 *Martingale Sinal (Ativo)* preparado por {motivo}. Próximo sinal exclusivo em {symbol} entrará com ${next_amount:.2f} ({texto_modo})."
                             
                         await telegram_alert_cb(msg_mg)
                 else:
