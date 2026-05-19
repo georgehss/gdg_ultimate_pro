@@ -197,10 +197,15 @@ class TradingTelegramBot:
 
         elif self.setup_step == "custom_params_q":
             idx = self.custom_param_index
-            pergunta, padrao, tipo, explicacao = self.custom_questions[idx]
+            pergunta, padrao, tipo, explicacao, strat_key = self.custom_questions[idx]
+            
+            # Adiciona um aviso visual caso o usuário esteja no modo Consenso
+            modo_atual = self.user_config.get("mode", "strategy")
+            tag_contexto = f" 🏷️ Estratégia: *{strat_key.upper()}*\n" if modo_atual == "strat_consensus" else ""
             
             text = (
                 f"✍️ *Configuração Customizada [{idx+1}/{len(self.custom_questions)}]*\n\n"
+                f"{tag_contexto}"
                 f"🔹 *{pergunta}*\n"
                 f"💡 _O que faz:_ {explicacao}\n\n"
                 f"👉 Valor Padrão Recomendado: `{padrao}`\n\n"
@@ -569,44 +574,59 @@ class TradingTelegramBot:
             
             if self.user_config["profile"] == "Customizado":
                 modo_atual = self.user_config.get("mode", "strategy")
+                self.custom_questions = []
                 
-                # Monta as perguntas adicionando a explicação detalhada de cada filtro
+                # Definição das listas de perguntas (Adicionado o 5º parâmetro para identificar a estratégia correspondente)
+                questions_rsi = [
+                    ("Período do RSI", "14", "int", "Define a quantidade de velas anteriores que o indicador RSI vai analisar para medir a velocidade e a mudança dos movimentos de preço.", "rsi"),
+                    ("Nível de Sobrecompra (Teto)", "70", "int", "O limite máximo do RSI. Acima deste valor, o preço é considerado caro demais (exaustão de compradores) e o robô buscará Gatilhos de Venda.", "rsi"),
+                    ("Nível de Sobrevenda (Piso)", "30", "int", "O limite mínimo do RSI. Abaixo deste valor, o preço é considerado barato demais (exaustão de vendedores) e o robô buscará Gatilhos de Compra.", "rsi"),
+                    ("Período da SMMA Longa (Macro)", "100", "int", "Média móvel de longo prazo institucional. Atua como bússola: o robô só compra se o preço estiver acima dela e só vende se estiver abaixo.", "rsi"),
+                    ("Período da EMA Curta", "9", "int", "Média móvel rápida usada para rastrear micro-tendências e desvios imediatos do preço atual em confluência com o RSI.", "rsi"),
+                    ("Nível Mínimo do ADX (Força)", "20", "int", "Garante que o mercado tenha força direcional. Valores baixos evitam que o robô envie ordens quando o mercado estiver totalmente parado de lado.", "rsi"),
+                    ("Multiplicador de Volatilidade", "0.7", "float", "Exige que o tamanho total da vela de sinal seja pelo menos 'X' vezes maior que a volatilidade média das últimas 10 velas.", "rsi"),
+                    ("Multiplicador de Volume (Ignição)", "1.0", "float", "Exige que o volume financeiro da vela de sinal seja forte, confirmando a entrada de capital institucional a mercado.", "rsi"),
+                    ("Desvio Padrão Bollinger", "2.0", "float", "Controla a largura das Bandas. Valores maiores exigem que o preço estique mais agressivamente para fora das bandas para validar a exaustão.", "rsi")
+                ]
+                
+                questions_ma = [
+                    ("Período EMA Rápida", "9", "int", "Média móvel de curto prazo que acompanha o preço de perto para detecção imediata de viradas de fluxo.", "ma"),
+                    ("Período EMA Lenta", "21", "int", "Média móvel de médio prazo. O cruzamento da EMA Rápida sobre esta EMA Lenta determina a mudança oficial da tendência.", "ma"),
+                    ("Período da SMMA Longa (Macro)", "100", "int", "Média protetora institucional. O robô irá ignorar cruzamentos de médias se eles forem contra a direção desta macro-tendência.", "ma"),
+                    ("Cooldown (Velas de espera)", "3", "int", "Número de velas que o robô deve esperar obrigatoriamente após abrir uma ordem antes de poder analisar um novo sinal neste mesmo ativo.", "ma"),
+                    ("Multiplicador ATR (Afastamento)", "0.15", "float", "Usa o indicador ATR (volatilidade) para exigir que as médias se cruzem e se seprem por uma distância segura, filtrando cruzamentos 'falsos' em mercados travados.", "ma"),
+                    ("Nível Mínimo do ADX (Força)", "20", "int", "Filtro de tendência. Evita que o robô compre ou venda cruzamentos de médias que ocorram durante consolidações/mercados laterais.", "ma"),
+                    ("Multiplicador de Volume (Ignição)", "1.0", "float", "Exige que a vela que gerou o cruzamento venha acompanhada de forte volume de injeção financeira institucional.", "ma"),
+                    ("RSI Máximo para Comprar", "65", "int", "Filtro de segurança. Impede que o robô compre um cruzamento de alta se o mercado já estiver esticado demais no topo (sobrecomprado).", "ma"),
+                    ("RSI Mínimo para Vender", "35", "int", "Filtro de segurança. Impede que o robô venda um cruzamento de baixa se o preço já estiver esticado demais no fundo (sobrevendido).", "ma")
+                ]
+                
+                questions_engulf = [
+                    ("Período da SMMA Curta (Aceleração)", "8", "int", "Média móvel de curtíssimo prazo usada para validar a proximidade, o toque de retorno ou o rompimento imediato do preço.", "engulf"),
+                    ("Período da SMMA Média (Tendência)", "59", "int", "Média intermediária usada para garantir que a tendência de médio prazo apoia a reversão gráfica identificada.", "engulf"),
+                    ("Período da SMMA Longa (Macro)", "200", "int", "A grande média institucional. Define a maré principal do ativo para garantir que você nunca opere contra os grandes players mundiais.", "engulf"),
+                    ("Nível Mínimo do ADX (Força)", "18", "int", "Evita que o robô opere padrões de Price Action (como engolfos e martelos) quando o mercado estiver sem direção, dentro de caixotes estreitos.", "engulf"),
+                    ("Multiplicador de Volatilidade (Tamanho)", "0.8", "float", "Exige que o tamanho total da vela do padrão gráfico tenha pelo menos 'X' % do tamanho médio das últimas 10 velas.", "engulf"),
+                    ("Teto Máximo do RSI para COMPRA", "60", "int", "Bloqueia ordens de compra se o RSI estiver acima deste valor, evitando que você compre topo logo antes de um pullback.", "engulf"),
+                    ("Piso Mínimo do RSI para VENDA", "40", "int", "Bloqueia ordens de venda se o RSI estiver abaixo deste valor, evitando que você venda fundo bem em cima de suportes históricos.", "engulf"),
+                    ("Multiplicador de Volume Mínimo", "1.0", "float", "Para padrões de força (Engolfo, Marubozu, Cinturão), exige que o volume financeiro supere a vela anterior para confirmar o interesse real de reversão.", "engulf")
+                ]
+                
                 if modo_atual == "strat_rsi":
-                    self.custom_questions = [
-                        ("Período do RSI", "14", "int", "Define a quantidade de velas anteriores que o indicador RSI vai analisar para medir a velocidade e a mudança dos movimentos de preço."),
-                        ("Nível de Sobrecompra (Teto)", "70", "int", "O limite máximo do RSI. Acima deste valor, o preço é considerado caro demais (exaustão de compradores) e o robô buscará Gatilhos de Venda."),
-                        ("Nível de Sobrevenda (Piso)", "30", "int", "O limite mínimo do RSI. Abaixo deste valor, o preço é considerado barato demais (exaustão de vendedores) e o robô buscará Gatilhos de Compra."),
-                        ("Período da SMMA Longa (Macro)", "100", "int", "Média móvel de longo prazo institucional. Atua como bússola: o robô só compra se o preço estiver acima dela e só vende se estiver abaixo."),
-                        ("Período da EMA Curta", "9", "int", "Média móvel rápida usada para rastrear micro-tendências e desvios imediatos do preço atual em confluência com o RSI."),
-                        ("Nível Mínimo do ADX (Força)", "20", "int", "Garante que o mercado tenha força direcional. Valores baixos evitam que o robô envie ordens quando o mercado estiver totalmente parado de lado."),
-                        ("Multiplicador de Volatilidade", "0.7", "float", "Exige que o tamanho total da vela de sinal seja pelo menos 'X' vezes maior que a volatilidade média das últimas 10 velas."),
-                        ("Multiplicador de Volume (Ignição)", "1.0", "float", "Exige que o volume financeiro da vela de sinal seja forte, confirmando a entrada de capital institucional a mercado."),
-                        ("Desvio Padrão Bollinger", "2.0", "float", "Controla a largura das Bandas. Valores maiores exigem que o preço estique mais agressivamente para fora das bandas para validar a exaustão.")
-                    ]
+                    self.custom_questions = questions_rsi
                 elif modo_atual == "strat_ma":
-                    self.custom_questions = [
-                        ("Período EMA Rápida", "9", "int", "Média móvel de curto prazo que acompanha o preço de perto para detecção imediata de viradas de fluxo."),
-                        ("Período EMA Lenta", "21", "int", "Média móvel de médio prazo. O cruzamento da EMA Rápida sobre esta EMA Lenta determina a mudança oficial da tendência."),
-                        ("Período da SMMA Longa (Macro)", "100", "int", "Média protetora institucional. O robô irá ignorar cruzamentos de médias se eles forem contra a direção desta macro-tendência."),
-                        ("Cooldown (Velas de espera)", "3", "int", "Número de velas que o robô deve esperar obrigatoriamente após abrir uma ordem antes de poder analisar um novo sinal neste mesmo ativo."),
-                        ("Multiplicador ATR (Afastamento)", "0.15", "float", "Usa o indicador ATR (volatilidade) para exigir que as médias se cruzem e se seprem por uma distância segura, filtrando cruzamentos 'falsos' em mercados travados."),
-                        ("Nível Mínimo do ADX (Força)", "20", "int", "Filtro de tendência. Evita que o robô compre ou venda cruzamentos de médias que ocorram durante consolidações/mercados laterais."),
-                        ("Multiplicador de Volume (Ignição)", "1.0", "float", "Exige que a vela que gerou o cruzamento venha acompanhada de forte volume de injeção financeira institucional."),
-                        ("RSI Máximo para Comprar", "65", "int", "Filtro de segurança. Impede que o robô compre um cruzamento de alta se o mercado já estiver esticado demais no topo (sobrecomprado)."),
-                        ("RSI Mínimo para Vender", "35", "int", "Filtro de segurança. Impede que o robô venda um cruzamento de baixa se o preço já estiver esticado demais no fundo (sobrevendido).")
-                    ]
-                else: # Default: Engolfo / Price Action
-                    self.custom_questions = [
-                        ("Período da SMMA Curta (Aceleração)", "8", "int", "Média móvel de curtíssimo prazo usada para validar a proximidade, o toque de retorno ou o rompimento imediato do preço."),
-                        ("Período da SMMA Média (Tendência)", "59", "int", "Média intermediária usada para garantir que a tendência de médio prazo apoia a reversão gráfica identificada."),
-                        ("Período da SMMA Longa (Macro)", "200", "int", "A grande média institucional. Define a maré principal do ativo para garantir que você nunca opere contra os grandes players mundiais."),
-                        ("Nível Mínimo do ADX (Força)", "18", "int", "Evita que o robô opere padrões de Price Action (como engolfos e martelos) quando o mercado estiver sem direção, dentro de caixotes estreitos."),
-                        ("Multiplicador de Volatilidade (Tamanho)", "0.8", "float", "Exige que o tamanho total da vela do padrão gráfico tenha pelo menos 'X' % do tamanho médio das últimas 10 velas."),
-                        ("Teto Máximo do RSI para COMPRA", "60", "int", "Bloqueia ordens de compra se o RSI estiver acima deste valor, evitando que você compre topo logo antes de um pullback."),
-                        ("Piso Mínimo do RSI para VENDA", "40", "int", "Bloqueia ordens de venda se o RSI estiver abaixo deste valor, evitando que você venda fundo bem em cima de suportes históricos."),
-                        ("Multiplicador de Volume Mínimo", "1.0", "float", "Para padrões de força (Engolfo, Marubozu, Cinturão), exige que o volume financeiro supere a vela anterior para confirmar o interesse real de reversão.")
-                    ]
-                
+                    self.custom_questions = questions_ma
+                elif modo_atual == "strat_engulf":
+                    self.custom_questions = questions_engulf
+                elif modo_atual == "strat_consensus":
+                    # Monta um super-questionário sequencial com base nas estratégias ativas na votação
+                    ativas = self.user_config.get("active_strategies", [])
+                    if "rsi" in ativas: self.custom_questions.extend(questions_rsi)
+                    if "ma" in ativas: self.custom_questions.extend(questions_ma)
+                    if "engulf" in ativas: self.custom_questions.extend(questions_engulf)
+                else:
+                    self.custom_questions = questions_engulf
+                    
                 self.setup_step = "custom_params_q"
                 self.custom_param_index = 0
                 self.temp_custom_params = []
@@ -619,7 +639,18 @@ class TradingTelegramBot:
             self.custom_param_index += 1
             
             if self.custom_param_index >= len(self.custom_questions):
-                self.user_config["custom_params"] = ", ".join(self.temp_custom_params)
+                modo_atual = self.user_config.get("mode", "strategy")
+                
+                if modo_atual == "strat_consensus":
+                    dict_params = {}
+                    for idx_q, val_ans in enumerate(self.temp_custom_params):
+                        s_key = self.custom_questions[idx_q][4]
+                        dict_params.setdefault(s_key, []).append(val_ans)
+                    # Grava como um dicionário de strings estruturadas
+                    self.user_config["custom_params"] = {k: ", ".join(v) for k, v in dict_params.items()}
+                else:
+                    self.user_config["custom_params"] = ", ".join(self.temp_custom_params)
+                    
                 self.setup_step = "filters_menu"
 
         elif data.startswith('flt_'):
@@ -698,21 +729,28 @@ class TradingTelegramBot:
         if self.setup_step == "custom_params_q":
             texto = update.message.text.strip().replace(',', '.')
             idx = self.custom_param_index
-            _, _, tipo, _ = self.custom_questions[idx]
+            _, _, tipo, _, strat_key = self.custom_questions[idx]
             
             try:
-                # Valida se o usuário digitou corretamente
                 if tipo == "int":
                     val = str(int(texto))
                 else:
                     val = str(float(texto))
                 
-                # Salva e avança
                 self.temp_custom_params.append(val)
                 self.custom_param_index += 1
                 
                 if self.custom_param_index >= len(self.custom_questions):
-                    self.user_config["custom_params"] = ", ".join(self.temp_custom_params)
+                    modo_atual = self.user_config.get("mode", "strategy")
+                    if modo_atual == "strat_consensus":
+                        dict_params = {}
+                        for idx_q, val_ans in enumerate(self.temp_custom_params):
+                            s_key = self.custom_questions[idx_q][4]
+                            dict_params.setdefault(s_key, []).append(val_ans)
+                        self.user_config["custom_params"] = {k: ", ".join(v) for k, v in dict_params.items()}
+                    else:
+                        self.user_config["custom_params"] = ", ".join(self.temp_custom_params)
+                        
                     self.setup_step = "filters_menu"
                     await self.send_setup_step(update.message, is_edit=False)
                 else:
@@ -883,7 +921,11 @@ class TradingTelegramBot:
 
         perfil_exibicao = self.user_config.get('profile', 'Balanceado')
         if perfil_exibicao == "Customizado" and self.user_config.get('custom_params'):
-            perfil_exibicao += f" ({self.user_config['custom_params']})"
+            cp = self.user_config['custom_params']
+            if isinstance(cp, dict):
+                perfil_exibicao += " [Consenso Customizado ⚙️]"
+            else:
+                perfil_exibicao += f" ({cp})"
 
         resumo = (
             f"🚀 *SISTEMA INICIANDO!*\n\n"

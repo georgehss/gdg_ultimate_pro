@@ -29,24 +29,29 @@ class ConsensusStrategy(BaseStrategy):
         elif timeframe == "15m": self.timeframe_seconds = 900
         else: self.timeframe_seconds = 60
         
+        # Inicializa as sub-estratégias com base nas escolhidas
         self.strategies = []
         self.strat_names = []
         
         async def dummy_alert(msg): pass
         
-        # Instancia dinamicamente apenas as estratégias selecionadas (Repassando os Filtros)
+        # Filtra os parâmetros corretos para cada estratégia se for um dicionário de Consenso Customizado
+        rsi_p = custom_params.get("rsi") if isinstance(custom_params, dict) else custom_params
+        ma_p = custom_params.get("ma") if isinstance(custom_params, dict) else custom_params
+        engulf_p = custom_params.get("engulf") if isinstance(custom_params, dict) else custom_params
+
         if "rsi" in self.active_strategies:
-            strat = RSIStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=custom_params, active_filters=self.active_filters)
+            strat = RSIStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=rsi_p, active_filters=self.active_filters)
             self.strategies.append(strat)
             self.strat_names.append("RSI Pro")
             
         if "ma" in self.active_strategies:
-            strat = MACrossStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=custom_params, active_filters=self.active_filters)
+            strat = MACrossStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=ma_p, active_filters=self.active_filters)
             self.strategies.append(strat)
             self.strat_names.append("MA Cross Pro")
             
         if "engulf" in self.active_strategies:
-            strat = EngulfMAStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=custom_params, active_filters=self.active_filters)
+            strat = EngulfMAStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=engulf_p, active_filters=self.active_filters)
             self.strategies.append(strat)
             self.strat_names.append("Price Action Pro")
         
