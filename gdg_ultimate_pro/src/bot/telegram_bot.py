@@ -384,15 +384,15 @@ class TradingTelegramBot:
         elif self.setup_step == "stop_loss":
             text = "🛑 *Limite de Perda (Stop Loss)*\nAo atingir que prejuízo o bot deve parar hoje para proteger a banca?"
             keyboard = [
-                [InlineKeyboardButton("$ 2", callback_data='tp_2.0'),
-                 InlineKeyboardButton("$ 4", callback_data='tp_4.0'),
-                 InlineKeyboardButton("$ 5", callback_data='tp_5.0')],
-                [InlineKeyboardButton("$ 10", callback_data='tp_10.0'),
-                 InlineKeyboardButton("$ 12", callback_data='tp_12.0'),
-                 InlineKeyboardButton("$ 15", callback_data='tp_15.0')],
-                [InlineKeyboardButton("$ 20", callback_data='tp_20.0'),
-                 InlineKeyboardButton("$ 30", callback_data='tp_30.0'),
-                 InlineKeyboardButton("$ 100", callback_data='tp_100.0')],
+                [InlineKeyboardButton("-$ 2", callback_data='sl_-2.0'),
+                 InlineKeyboardButton("-$ 4", callback_data='sl_-4.0'),
+                 InlineKeyboardButton("-$ 5", callback_data='sl_-5.0')],
+                [InlineKeyboardButton("-$ 10", callback_data='sl_-10.0'),
+                 InlineKeyboardButton("-$ 12", callback_data='sl_-12.0'),
+                 InlineKeyboardButton("-$ 15", callback_data='sl_-15.0')],
+                [InlineKeyboardButton("-$ 20", callback_data='sl_-20.0'),
+                 InlineKeyboardButton("-$ 30", callback_data='sl_-30.0'),
+                 InlineKeyboardButton("-$ 100", callback_data='sl_-100.0')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_stop_loss')]
             ]
 
