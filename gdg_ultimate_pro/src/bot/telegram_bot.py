@@ -698,7 +698,7 @@ class TradingTelegramBot:
         if self.setup_step == "custom_params_q":
             texto = update.message.text.strip().replace(',', '.')
             idx = self.custom_param_index
-            _, _, tipo = self.custom_questions[idx]
+            _, _, tipo, _ = self.custom_questions[idx]
             
             try:
                 # Valida se o usuário digitou corretamente

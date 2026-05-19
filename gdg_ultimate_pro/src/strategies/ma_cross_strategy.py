@@ -71,11 +71,15 @@ class MACrossStrategy(BaseStrategy):
             self.slow_period = 14
             self.long_ma_period = 59
             self.cooldown_bars = 3
-            self.atr_multiplier = 0.15
-            self.min_adx = 20
+            self.atr_sep_mult = 0.15
+            self.min_adx = 18
             self.volume_mult = 1.0
-            self.rsi_max_buy = 65
-            self.rsi_min_sell = 35
+            self.rsi_max_buy = 70
+            self.rsi_min_sell = 30
+            
+            # Variáveis de segurança necessárias para o MA Cross funcionar
+            self.use_slope = True          
+            self.use_atr_sep = True        
 
             logger.info("⚙️ Carregando Perfil Customizado definido via Telegram...")
 
@@ -95,8 +99,8 @@ class MACrossStrategy(BaseStrategy):
                     self.cooldown_bars = int(valores[3])
                     logger.info(f" └─ Filtro [4/9] Cooldown (Velas) -> {self.cooldown_bars}")
                 if len(valores) >= 5 and valores[4]:
-                    self.atr_multiplier = float(valores[4])
-                    logger.info(f" └─ Filtro [5/9] Multiplicador ATR -> {self.atr_multiplier}")
+                    self.atr_sep_mult = float(valores[4]) # <-- Nome corrigido aqui também
+                    logger.info(f" └─ Filtro [5/9] Multiplicador ATR -> {self.atr_sep_mult}")
                 if len(valores) >= 6 and valores[5]:
                     self.min_adx = int(valores[5])
                     logger.info(f" └─ Filtro [6/9] ADX Mínimo -> {self.min_adx}")

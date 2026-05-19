@@ -68,11 +68,15 @@ class RSIStrategy(BaseStrategy):
             self.rsi_overbought = 70
             self.rsi_oversold = 30
             self.long_ma_period = 100
-            self.short_ema_period = 9
+            self.ema_period = 9 
             self.min_adx = 20
             self.volatility_mult = 0.7
             self.volume_mult = 1.0
             self.bb_std = 2.0
+            
+            # Variáveis de segurança necessárias para o RSI funcionar
+            self.entry_mode = "CROSSBACK"   
+            self.confirm_candle = True      
 
             logger.info("⚙️ Carregando Perfil Customizado definido via Telegram...")
 
@@ -92,8 +96,8 @@ class RSIStrategy(BaseStrategy):
                     self.long_ma_period = int(valores[3])
                     logger.info(f" └─ Filtro [4/9] Período da SMMA Longa -> {self.long_ma_period}")
                 if len(valores) >= 5 and valores[4]:
-                    self.short_ema_period = int(valores[4])
-                    logger.info(f" └─ Filtro [5/9] Período da EMA Curta -> {self.short_ema_period}")
+                    self.ema_period = int(valores[4]) # <-- Nome corrigido aqui também
+                    logger.info(f" └─ Filtro [5/9] Período da EMA Curta -> {self.ema_period}")
                 if len(valores) >= 6 and valores[5]:
                     self.min_adx = int(valores[5])
                     logger.info(f" └─ Filtro [6/9] ADX Mínimo -> {self.min_adx}")
