@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 
 class HioveBrokerAPI:
     def __init__(self, scraper=None, user_config=None):
+        self.active_symbols = {} # Guarda quais ativos estão em operação
         self.scraper = scraper
         self.user_config = user_config or {} # Guarda as opções do Telegram
         self.session = None
@@ -49,10 +50,19 @@ class HioveBrokerAPI:
             return None
 
     # ========================================================
-    # NOVA FUNÇÃO UNIVERSAL DE ORDEM E MONITORAMENTO
+    # FUNÇÃO UNIVERSAL DE ORDEM E MONITORAMENTO
     # ========================================================
     async def place_order_and_monitor(self, symbol: str, direction: str, amount: float, duration: str, telegram_alert_cb, current_step=0, accumulated_loss=0.0):
+        # NOVA VERIFICAÇÃO: Se o ativo já estiver operando, ignora o sinal
+        if self.active_symbols.get(symbol, False):
+            logger.info(f"Sinal ignorado para {symbol}. Já existe uma operação em andamento neste ativo.")
+            return None
+
+        # Se passou da verificação, tranca o ativo!
+        self.active_symbols[symbol] = True
+
         if self.stop_triggered:
+            self.active_symbols[symbol] = False # Destranca se for barrado
             return None
             
         # --- LÓGICA DO MARTINGALE SINAL ANTES DE ENTRAR ---
@@ -177,6 +187,9 @@ class HioveBrokerAPI:
             msg_erro = f"❌ *Erro ao executar a ordem em {symbol}!*"
             logger.error(msg_erro.replace('*', ''))
             await telegram_alert_cb(msg_erro)
+
+            # Destranca o ativo se a ordem falhar logo de cara
+            self.active_symbols[symbol] = False
 
     async def _monitor_task(self, symbol, order_id, tempo_espera, telegram_alert_cb, amount: float, direction: str, duration: str, current_step: int = 0, payout: str = "N/A", hora_sinal: str = "", saldo_inicial: float = 0.0, accumulated_loss: float = 0.0):
         try:
@@ -372,6 +385,9 @@ class HioveBrokerAPI:
         finally: 
             # Avisa que esta operação terminou
             self.active_monitors -= 1
+
+            # NOVA LINHA: Libera o ativo para receber novos sinais
+            self.active_symbols[symbol] = False
             
             # Se esta era a última operação rodando E o bot bateu a meta/loss, envia a mensagem e menu de parada suave
             if self.active_monitors == 0 and self.stop_triggered and self.limit_reached_msg:
