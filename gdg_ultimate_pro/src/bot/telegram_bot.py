@@ -151,10 +151,11 @@ class TradingTelegramBot:
         elif self.setup_step == "strategy_type":
             text = "🧠 *Escolha a Estratégia*\nQual estratégia o robô deve usar?"
             keyboard = [
-                [InlineKeyboardButton("📊 Estratégia RSI", callback_data='strat_strat_rsi')],
+                [InlineKeyboardButton("📊 Estratégia RSI (Lateral)", callback_data='strat_strat_rsi')],
+                [InlineKeyboardButton("📊 Estratégia Engolfo MA (Tendência)", callback_data='strat_strat_engulf')],
                 [InlineKeyboardButton("📊 Estratégia MA Cross", callback_data='strat_strat_ma')],
-                [InlineKeyboardButton("📊 Estratégia Engolfo MA", callback_data='strat_strat_engulf')],
-                [InlineKeyboardButton("🤝 Consenso (As 3 Juntas)", callback_data='strat_strat_consensus')],
+                [InlineKeyboardButton("🤖 Portfólio Independente (RSI + Engolfo)", callback_data='strat_strat_portfolio')],
+                [InlineKeyboardButton("🤝 Consenso (Votação)", callback_data='strat_strat_consensus')],
                 [InlineKeyboardButton("⬅️ Voltar", callback_data='back_strategy_type')] 
             ]
 
@@ -583,15 +584,12 @@ class TradingTelegramBot:
                 
                 # Definição das listas de perguntas (Adicionado o 5º parâmetro para identificar a estratégia correspondente)
                 questions_rsi = [
-                    ("Período do RSI", "14", "int", "Define a quantidade de velas anteriores que o indicador RSI vai analisar para medir a velocidade e a mudança dos movimentos de preço.", "rsi"),
-                    ("Nível de Sobrecompra (Teto)", "70", "int", "O limite máximo do RSI. Acima deste valor, o preço é considerado caro demais (exaustão de compradores) e o robô buscará Gatilhos de Venda.", "rsi"),
-                    ("Nível de Sobrevenda (Piso)", "30", "int", "O limite mínimo do RSI. Abaixo deste valor, o preço é considerado barato demais (exaustão de vendedores) e o robô buscará Gatilhos de Compra.", "rsi"),
-                    ("Período da SMMA Longa (Macro)", "100", "int", "Média móvel de longo prazo institucional. Atua como bússola: o robô só compra se o preço estiver acima dela e só vende se estiver abaixo.", "rsi"),
-                    ("Período da EMA Curta", "9", "int", "Média móvel rápida usada para rastrear micro-tendências e desvios imediatos do preço atual em confluência com o RSI.", "rsi"),
-                    ("Nível Mínimo do ADX (Força)", "20", "int", "Garante que o mercado tenha força direcional. Valores baixos evitam que o robô envie ordens quando o mercado estiver totalmente parado de lado.", "rsi"),
-                    ("Multiplicador de Volatilidade", "0.7", "float", "Exige que o tamanho total da vela de sinal seja pelo menos 'X' vezes maior que a volatilidade média das últimas 10 velas.", "rsi"),
-                    ("Multiplicador de Volume (Ignição)", "1.0", "float", "Exige que o volume financeiro da vela de sinal seja forte, confirmando a entrada de capital institucional a mercado.", "rsi"),
-                    ("Desvio Padrão Bollinger", "2.0", "float", "Controla a largura das Bandas. Valores maiores exigem que o preço estique mais agressivamente para fora das bandas para validar a exaustão.", "rsi")
+                    ("Período do RSI", "14", "int", "Define a velocidade do indicador. Menor = mais sensível aos caixotes curtos.", "rsi"),
+                    ("ADX Máximo (Lateralidade)", "25", "int", "Filtro principal: O robô só opera se o ADX estiver ABAIXO deste valor, garantindo que o mercado está lateralizado (sem tendência).", "rsi"),
+                    ("Multiplicador de Volatilidade", "0.8", "float", "Exige que o tamanho total da vela de sinal seja pelo menos 'X' vezes maior que a média recente.", "rsi"),
+                    ("Desvio Padrão Bollinger", "2.0", "float", "Controla a largura das bordas do caixote. O preço deve tocar essas bordas para validar a exaustão.", "rsi"),
+                    ("Tamanho Mínimo do Caixote (%)", "0.003", "float", "A distância entre o teto e o chão das bandas deve ser maior que este percentual (ex: 0.003 = 0.3%) para valer a pena a entrada.", "rsi"),
+                    ("Volume de Paragem (Stopping Vol)", "1.2", "float", "Exige que o volume da vela de rejeição na borda do caixote seja 'X' vezes superior à média, confirmando a absorção institucional.", "rsi")
                 ]
                 
                 questions_ma = [
@@ -845,11 +843,11 @@ class TradingTelegramBot:
         • *Filtro de Rampa (Slope):* A média lenta precisa estar efetivamente "apontada" para o lado da operação. 
         • *Confirmações:* Valida se o ADX (força da tendência) é forte e se há aumento real no volume (vela de ignição).
 
-        *3. RSI PRO (O Operador de Elástico)*
-        Foca em capturar reversões após exaustão extrema do preço.
-        • *Gatilho de Tensão (RSI):* Monitora o RSI para identificar quando o mercado está muito sobrevendido (abaixo de 30) ou sobrecomprado (acima de 70).
-        • *Confirmação Extrema (Bandas de Bollinger):* Exige que o preço tenha perfurado as Bandas de Bollinger junto com o RSI extremo.
-        • *Defesa Institucional:* Na vela de reversão, o volume precisa ser maior que o da vela anterior, sinalizando que os grandes players estão defendendo a região.
+        *3. RSI LATERAL PRO (O Operador de Caixotes)*
+        Especialista em mercados consolidados/sem tendência. Enquanto o Engolfo opera tendências, este aqui atua quando o mercado fica de lado.
+        • *Filtro de Lateralidade (ADX):* O robô só liga se o ADX estiver baixo, confirmando que o mercado está travado num caixote.
+        • *Gatilho de Rejeição:* Identifica falsos rompimentos (Springs) nas extremidades das Bandas de Bollinger junto com divergências de RSI.
+        • *Stopping Volume:* Confirma que os grandes bancos estão travando o preço na borda através de picos de volume nas velas de reversão.
 
         *4. CONSENSUS STRATEGY (O Orquestrador Inteligente)*
         Atua como um coordenador que consulta os sinais das outras 3 abordagens.

@@ -43,7 +43,7 @@ class ConsensusStrategy(BaseStrategy):
         if "rsi" in self.active_strategies:
             strat = RSIStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=rsi_p, active_filters=self.active_filters)
             self.strategies.append(strat)
-            self.strat_names.append("RSI Pro")
+            self.strat_names.append("RSI Lateral Pro")
             
         if "ma" in self.active_strategies:
             strat = MACrossStrategy(broker, dummy_alert, symbol, timeframe, profile=profile, custom_params=ma_p, active_filters=self.active_filters)

@@ -136,6 +136,21 @@ async def run_session(tg_bot, global_stop_event):
         nomes = [s.upper() for s in ativas]
         await tg_bot.send_alert(f"✅ Estratégia de Consenso ({perfil_escolhido}) iniciada!\n▫️ Ativas: {', '.join(nomes)}\n▫️ Exige Mín. {votos_necessarios} votos.")
 
+    elif config["mode"] == "strat_portfolio":
+        for ativo in config["assets"]:
+            # 1. Instancia o Especialista em Tendência (Engolfo)
+            strat_tendencia = EngulfMAStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido, custom_params=config.get("custom_params"), active_filters=filtros)
+            strat_tendencia.trade_amount, strat_tendencia.trade_duration = config["amount"], config["duration"]
+            manager.add_strategy(strat_tendencia)
+
+            # 2. Instancia o Especialista em Lateralidade (RSI)
+            strat_lateral = RSIStrategy(broker, tg_bot.send_alert, symbol=ativo, timeframe=config.get("timeframe", "1m"), profile=perfil_escolhido, custom_params=config.get("custom_params"), active_filters=filtros)
+            strat_lateral.trade_amount, strat_lateral.trade_duration = config["amount"], config["duration"]
+            manager.add_strategy(strat_lateral)
+            
+        strategy_task = asyncio.create_task(manager.start_all())
+        await tg_bot.send_alert(f"✅ Portfólio Duplo ({perfil_escolhido}) iniciado!\n▫️ Engolfo (Tendências) e RSI (Lateralidade) a operar independentemente no mesmo ativo.")
+
     elif config["mode"] == "live":
         webhook = WebhookServer(scraper=scraper, telegram_bot=tg_bot, user_config=config)
         await webhook.start(port=8080)
