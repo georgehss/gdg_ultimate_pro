@@ -14,8 +14,8 @@ class EngulfMAStrategy(BaseStrategy):
         self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
         
         # Converte para segundos para o relógio da estratégia
-        if timeframe == "5m": self.timeframe_seconds = 300
-        elif timeframe == "15m": self.timeframe_seconds = 900
+        if timeframe == "5m": self.timeframe_seconds = 300      # 5 minutos
+        elif timeframe == "15m": self.timeframe_seconds = 900   # 15 minutos
         else: self.timeframe_seconds = 60 # Padrão 1 minuto
         
         self.profile = profile
@@ -24,13 +24,13 @@ class EngulfMAStrategy(BaseStrategy):
         # Aplica as configurações baseadas no perfil escolhido
         self._apply_profile_settings()
         
-        self.trade_amount = 1.0
-        self.trade_duration = "01:00"
-        self.last_signal_time = None      
+        self.trade_amount = 1.0             # Valor fixo para opções binárias (pode ser ajustado conforme necessário)
+        self.trade_duration = "01:00"       # Duração fixa de 1 minuto para opções binárias (pode ser ajustada conforme necessário)
+        self.last_signal_time = None        # Para evitar múltiplos sinais na mesma vela
 
     def _apply_profile_settings(self):
-        self.rsi_period = 14
-        self.ma_entry_mode = "BREAK"
+        self.rsi_period = 14                # Período padrão para o RSI
+        self.ma_entry_mode = "BREAK"        # "BREAK" = Entrada no rompimento da média (fechamento acima/abaixo)
         
         if self.profile == "Conservador":
             self.short_ma_period = 8        # Período da SMMA curta (Aceleração do preço)
@@ -41,8 +41,8 @@ class EngulfMAStrategy(BaseStrategy):
             # FILTROS INSTITUCIONAIS DINÂMICOS
             self.min_adx = 25               # Exige forte direcionalidade no movimento
             self.volatility_mult = 1.0      # Volatilidade da vela de sinal deve ser >= 100% da média
-            self.rsi_pullback_buy = 60      # Trava a compra se o RSI já estiver acima de 60 (quase sobrecomprado)
-            self.rsi_pullback_sell = 40     # Trava a venda se o RSI já estiver abaixo de 40 (quase sobrevendido)
+            self.rsi_pullback_buy = 65      # Trava a compra se o RSI já estiver acima de 65 (quase sobrecomprado)
+            self.rsi_pullback_sell = 35     # Trava a venda se o RSI já estiver abaixo de 35 (quase sobrevendido)
             self.volume_mult = 1.1          # Exige que o volume da vela de sinal seja 10% MAIOR que a anterior
             
         elif self.profile == "Agressivo":
@@ -53,22 +53,22 @@ class EngulfMAStrategy(BaseStrategy):
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
             self.min_adx = 10               # Opera mesmo em mercado quase lateral
-            self.volatility_mult = 0.5      # Aceita padrões de reversão de corpo pequeno (50% da média)
+            self.volatility_mult = 0.2      # Aceita padrões de reversão de corpo pequeno (50% da média)
             self.rsi_pullback_buy = 70      # Compra até encostar na zona de sobrecompra extrema
             self.rsi_pullback_sell = 30     # Vende até encostar na zona de sobrevenda extrema
-            self.volume_mult = 0.5          # Aceita entrar com metade do volume da vela anterior
+            self.volume_mult = 0.5          # Aceita entrar com 50% do volume da vela anterior
 
         elif self.profile == "Customizado" and self.custom_params:
             # Valores base
-            self.short_ma_period = 8        
-            self.medium_ma_period = 59      
-            self.long_ma_period = 200       
-            self.epsilon = 0.0              
-            self.min_adx = 18               
-            self.volatility_mult = 0.8      
-            self.rsi_pullback_buy = 60      
-            self.rsi_pullback_sell = 40     
-            self.volume_mult = 1.0          
+            self.short_ma_period = 8        # Período da SMMA curta (Aceleração do preço)
+            self.medium_ma_period = 59      # Período da SMMA média (Tendência intermediária)
+            self.long_ma_period = 200       # Período da SMMA longa (Macrotendência)
+            self.epsilon = 0.0              # Encaixe matemático perfeito exigido para engolfo
+            self.min_adx = 15               # Exige uma tendência mínima para validar o sinal (pode ser ajustado para mais ou menos rigor)
+            self.volatility_mult = 0.5      # Volatilidade da vela de sinal deve ser >= 50% da média
+            self.rsi_pullback_buy = 70      # Compra até encostar na zona de sobrecompra extrema
+            self.rsi_pullback_sell = 30     # Vende até encostar na zona de sobrevenda extrema     
+            self.volume_mult = 1.0          # Exige que o volume da vela de sinal seja igual ou maior que a anterior
 
             logger.info("⚙️ Carregando Perfil Customizado definido via Telegram...")
 
@@ -112,10 +112,10 @@ class EngulfMAStrategy(BaseStrategy):
             self.epsilon = 0.0              # Encaixe matemático perfeito exigido para engolfo
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
-            self.min_adx = 20               # Filtra falsos rompimentos em consolidação estreita
+            self.min_adx = 18               # Filtra falsos rompimentos em consolidação estreita
             self.volatility_mult = 1.0      # Exige uma vela de sinal com volatilidade forte ou normal
-            self.rsi_pullback_buy = 65      # Aceita compra com margem leve de respiro antes da sobrecompra
-            self.rsi_pullback_sell = 35     # Aceita venda com margem leve de respiro antes da sobrevenda
+            self.rsi_pullback_buy = 70      # Aceita compra com margem leve de respiro antes da sobrecompra
+            self.rsi_pullback_sell = 30     # Aceita venda com margem leve de respiro antes da sobrevenda
             self.volume_mult = 1.0          # Valida que há capital suficiente empurrando a reversão
 
     async def analyze_market(self):
@@ -192,17 +192,17 @@ class EngulfMAStrategy(BaseStrategy):
             upper_wick1 = h1 - max(o1, c1)
             lower_wick1 = min(o1, c1) - l1
             
-            d1 = c1 - o1
-            d2 = c2 - o2
+            d1 = c1 - o1        # Diferença da Vela 1 (Corpo)
+            d2 = c2 - o2        # Diferença da Vela 2 (Corpo)
             
-            bull1 = d1 > self.epsilon
-            bear1 = d1 < -self.epsilon
-            bull2 = d2 > self.epsilon
-            bear2 = d2 < -self.epsilon
-            
-            use_volume = self.active_filters.get("volume", True)
-            use_adx = self.active_filters.get("adx", True)
-            use_trend = self.active_filters.get("trend", True)
+            bull1 = d1 > self.epsilon       # Vela 1 de alta (corpo positivo)
+            bear1 = d1 < -self.epsilon      # Vela 1 de baixa (corpo negativo)
+            bull2 = d2 > self.epsilon       # Vela 2 de alta (corpo positivo)
+            bear2 = d2 < -self.epsilon      # Vela 2 de baixa (corpo negativo)
+
+            use_volume = self.active_filters.get("volume", True)    # Verifica se o filtro de volume está ativo        
+            use_adx = self.active_filters.get("adx", True)          # Verifica se o filtro de ADX está ativo
+            use_trend = self.active_filters.get("trend", True)      # Verifica se o filtro de tendência (alinhamento das SMMAs) está ativo
 
             # Filtro de Volatilidade e Institucionais
             volatility_ok = size1 >= (avg_size1 * self.volatility_mult)
@@ -298,16 +298,17 @@ class EngulfMAStrategy(BaseStrategy):
             ma_ok_buy = False
             ma_ok_sell = False
             
+            # Dependendo do modo de entrada escolhido, a validação da média pode ser mais rigorosa (fechamento acima/abaixo) ou mais flexível (rompimento durante a vela)
             if self.ma_entry_mode == "ABOVE_BELOW":
-                ma_ok_buy = c1 > smma_short1 + self.epsilon
-                ma_ok_sell = c1 < smma_short1 - self.epsilon
+                ma_ok_buy = c1 > smma_short1 + self.epsilon     # Exige fechamento acima da média curta para validar compra
+                ma_ok_sell = c1 < smma_short1 - self.epsilon    # Exige fechamento abaixo da média curta para validar venda
             else: 
-                ma_ok_buy = (l1 <= smma_short1 + self.epsilon) and (c1 > smma_short1 + self.epsilon)
-                ma_ok_sell = (h1 >= smma_short1 - self.epsilon) and (c1 < smma_short1 - self.epsilon)
+                ma_ok_buy = (l1 <= smma_short1 + self.epsilon) and (c1 > smma_short1 + self.epsilon)    # Aceita que a vela tenha tocado ou ultrapassado a média curta durante a formação, mas exige fechamento acima para compra  
+                ma_ok_sell = (h1 >= smma_short1 - self.epsilon) and (c1 < smma_short1 - self.epsilon)   # Aceita que a vela tenha tocado ou ultrapassado a média curta durante a formação, mas exige fechamento abaixo para venda
                 
             # Filtro de Exaustão (RSI)
-            rsi_ok_buy = rsi1 < self.rsi_pullback_buy
-            rsi_ok_sell = rsi1 > self.rsi_pullback_sell
+            rsi_ok_buy = rsi1 < self.rsi_pullback_buy       # Trava a compra se o RSI já estiver muito próximo da zona de sobrecompra (ex: 65 ou 70, dependendo do perfil)
+            rsi_ok_sell = rsi1 > self.rsi_pullback_sell     # Trava a venda se o RSI já estiver muito próximo da zona de sobrevenda (ex: 35 ou 30, dependendo do perfil)
             
             # ----------------------------------------------------
             # Confluência de Sinais MÁXIMA (Inteligente)
