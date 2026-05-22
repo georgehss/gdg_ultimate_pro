@@ -15,7 +15,8 @@ class WebhookServer:
         self.app = web.Application()
         self.app.router.add_post('/sinal', self.handle_signal)
         self.runner = None
-        self.martingale_state = {} 
+        self.martingale_state = {}
+        self.martingale_queue = [] # Fila global para o MT5
 
     async def _execute_and_monitor(self, symbol, direction, amount, duration, current_step=0, accumulated_loss=0.0):
         
@@ -26,15 +27,30 @@ class WebhookServer:
         # LÓGICA DO MARTINGALE ANTES DE ENTRAR
         # ==========================================
         mg_type = self.user_config.get("martingale_type", "Nenhum")
-        state = self.martingale_state.get(symbol, {'step': 0, 'next_amount': amount, 'accumulated_loss': 0.0})
+        mg_signal_mode = self.user_config.get("martingale_signal_mode", "Global")
         
-        if mg_type == "Sinal" and current_step == 0 and state['step'] > 0:
-            amount = state['next_amount']
-            current_step = state['step']
-            accumulated_loss = state.get('accumulated_loss', 0.0)
-            msg = f"🔄 Aplicando Martingale Sinal (Passo {current_step}) para {symbol}: Novo valor ${amount:.2f}"
-            logger.info(msg)
-            await self.telegram_bot.send_alert(msg)
+        if mg_type == "Sinal" and current_step == 0:
+            if mg_signal_mode == "Global" and len(self.martingale_queue) > 0:
+                mg_data = self.martingale_queue.pop(0) 
+                amount = mg_data['next_amount']
+                current_step = mg_data['step']
+                accumulated_loss = mg_data.get('accumulated_loss', 0.0)
+                
+                msg = f"🔄 Aplicando MG Sinal (Global) - Passo {current_step} em {symbol}: Valor ${amount:.2f}."
+                logger.info(msg)
+                await self.telegram_bot.send_alert(msg)
+                
+            elif mg_signal_mode == "Ativo":
+                state = self.martingale_state.get(symbol, {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0})
+                if state['step'] > 0:
+                    amount = state['next_amount']
+                    current_step = state['step']
+                    accumulated_loss = state.get('accumulated_loss', 0.0)
+                    self.martingale_state[symbol] = {'step': 0, 'next_amount': 0, 'accumulated_loss': 0.0}
+                    
+                    msg = f"🔄 Aplicando MG Sinal (Ativo) - Passo {current_step} estritamente em {symbol}: Valor ${amount:.2f}."
+                    logger.info(msg)
+                    await self.telegram_bot.send_alert(msg)
         
         # ==========================================
         # 🛡️ BARREIRA DE GESTÃO DE RISCO DA SESSÃO
@@ -137,8 +153,12 @@ class WebhookServer:
                         ))
                         
                     elif mg_type == "Sinal":
-                        self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo}
-                        msg_mg = f"🔄 *Martingale Sinal* preparado. Prejuízo de ${novo_prejuizo:.2f}. Próximo sinal será de ${next_amount:.2f} ({texto_modo})."
+                        if mg_signal_mode == "Global":
+                            self.martingale_queue.append({'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo})
+                            msg_mg = f"🔄 *Martingale Sinal (Global)* na fila. Prejuízo de ${novo_prejuizo:.2f}. Próximo sinal de qualquer ativo entrará com ${next_amount:.2f}."
+                        else:
+                            self.martingale_state[symbol] = {'step': next_step, 'next_amount': next_amount, 'accumulated_loss': novo_prejuizo}
+                            msg_mg = f"🔄 *Martingale Sinal (Ativo)* preparado. Prejuízo de ${novo_prejuizo:.2f}. Próximo sinal neste ativo será de ${next_amount:.2f}."
                         await self.telegram_bot.send_alert(msg_mg)
                 else:
                     msg_mg = f"⚠️ *Martingale Finalizado* em {symbol}. Limite de {mg_steps} passos batido. Retornando ao normal."
