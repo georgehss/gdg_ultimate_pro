@@ -148,6 +148,9 @@ class EngulfMAStrategy(BaseStrategy):
             # Calcula o ADX para evitar lateralização
             adx_df = ta.adx(df['highPrice'], df['lowPrice'], df['closePrice'], length=14)
             df['adx'] = adx_df[adx_df.columns[0]]
+
+            # Calcula o ATR para evitar velas esticadas
+            df['atr'] = ta.atr(df['highPrice'], df['lowPrice'], df['closePrice'], length=14)
             
             # Tamanho da vela (High - Low) para medir a volatilidade média das últimas 10 velas
             df['candle_size'] = df['highPrice'] - df['lowPrice']
@@ -329,6 +332,23 @@ class EngulfMAStrategy(BaseStrategy):
             else:
                 vol_sell_ok = True
                 volm_sell_ok = True
+
+            # --- FILTROS ESPECÍFICOS DE OPÇÕES BINÁRIAS ---
+            atr1 = df['atr'].iloc[idx1] if 'atr' in df else size1
+            vela_esticada = size1 > (atr1 * 2.0)
+            
+            c3, o3 = df['closePrice'].iloc[-4], df['openPrice'].iloc[-4]
+            c4, o4 = df['closePrice'].iloc[-5], df['openPrice'].iloc[-5]
+            
+            exaustao_compra = (c1 > o1) and (c2 > o2) and (c3 > o3) and (c4 > o4)
+            exaustao_venda = (c1 < o1) and (c2 < o2) and (c3 < o3) and (c4 < o4)
+            
+            # Se a vela esticou demais ou o mercado está exausto, cancela o sinal
+            if vela_esticada or exaustao_compra:
+                vol_buy_ok = False
+            if vela_esticada or exaustao_venda:
+                vol_sell_ok = False
+            # ----------------------------------------------
 
             # Validação Final da Entrada
             is_buy = bullish_pattern and ma_ok_buy and trend_up and rsi_ok_buy and vol_buy_ok and volm_buy_ok and trend_strength_ok

@@ -166,9 +166,8 @@ class MACrossStrategy(BaseStrategy):
             df['adx'] = adx_df[adx_df.columns[0]]
             df['vol_sma'] = ta.sma(df['volume'], length=20)
             
-            # 2. Calcula o ATR
-            if self.use_atr_sep:
-                df['atr'] = ta.atr(df['highPrice'], df['lowPrice'], df['closePrice'], length=self.atr_period)
+            # 2. Calcula o ATR (Sempre calculado para o Filtro de Vela Esticada)
+            df['atr'] = ta.atr(df['highPrice'], df['lowPrice'], df['closePrice'], length=self.atr_period)
             
             df.dropna(inplace=True)
             
@@ -189,6 +188,8 @@ class MACrossStrategy(BaseStrategy):
             rsi1 = df['rsi'].iloc[last_closed]
             c1 = df['closePrice'].iloc[last_closed]
             o1 = df['openPrice'].iloc[last_closed]
+            h1 = df['highPrice'].iloc[last_closed] # Máxima da vela
+            l1 = df['lowPrice'].iloc[last_closed]  # Mínima da vela
             
             # NOVO: Pega o ADX, o Volume da vela atual e a Média de Volume
             adx1 = df['adx'].iloc[last_closed]
@@ -228,8 +229,36 @@ class MACrossStrategy(BaseStrategy):
                     cross_down = False
                     logger.debug(f"[{self.name}] SELL bloqueado: MA Lenta sem inclinação negativa.")
 
-            # --- NOVOS FILTROS INSTITUCIONAIS ---
+            # --- FILTROS INSTITUCIONAIS ---
             
+            # --- CÁLCULOS ESPECÍFICOS PARA OPÇÕES BINÁRIAS ---
+            tamanho_total1 = h1 - l1
+            corpo1 = abs(c1 - o1)
+            
+            # 1. Filtro Anti-Doji (Considera Doji se o corpo for <= 15% da vela total)
+            is_doji = corpo1 <= (tamanho_total1 * 0.15) if tamanho_total1 > 0 else True
+            
+            # 2. Filtro de Rejeição de Pavio
+            pavio_superior1 = h1 - max(c1, o1)
+            pavio_inferior1 = min(c1, o1) - l1
+            # Para compras, o pavio de cima não pode ser maior que o corpo. Para vendas, o pavio de baixo não pode ser maior.
+            rejeicao_alta = pavio_superior1 > corpo1  
+            rejeicao_baixa = pavio_inferior1 > corpo1 
+            
+            # 3. Filtro de Distância (Elástico Esticado)
+            # Verifica se o tamanho da vela de gatilho é maior que o dobro da volatilidade média (ATR)
+            atr1 = df['atr'].iloc[last_closed] if 'atr' in df else (tamanho_total1)
+            vela_esticada = tamanho_total1 > (atr1 * 2.0)
+            
+            # 4. Filtro Anti-Exaustão (Bloqueia se já vier de 4 velas da mesma cor)
+            c2, o2 = df['closePrice'].iloc[-3], df['openPrice'].iloc[-3]
+            c3, o3 = df['closePrice'].iloc[-4], df['openPrice'].iloc[-4]
+            c4, o4 = df['closePrice'].iloc[-5], df['openPrice'].iloc[-5]
+            
+            exaustao_compra = (c1 > o1) and (c2 > o2) and (c3 > o3) and (c4 > o4)
+            exaustao_venda = (c1 < o1) and (c2 < o2) and (c3 < o3) and (c4 < o4)
+            # -------------------------------------------------
+
             # NOVO: Filtro de Ignição (Volume e Ação de Preço) Dinâmico
             candle_ok_buy = (c1 > o1)
             candle_ok_sell = (c1 < o1)
@@ -245,6 +274,36 @@ class MACrossStrategy(BaseStrategy):
             if cross_down and not (candle_ok_sell and volume_ok):
                 cross_down = False
                 logger.debug(f"[{self.name}] SELL bloqueado: Falta de volume de ignição ou vela contrária.")
+
+            # --- APLICAÇÃO DOS FILTROS DE OPÇÕES BINÁRIAS ---
+            if cross_up:
+                if is_doji:
+                    cross_up = False
+                    logger.debug(f"[{self.name}] BUY bloqueado: Vela Doji (Indecisão).")
+                elif rejeicao_alta:
+                    cross_up = False
+                    logger.debug(f"[{self.name}] BUY bloqueado: Rejeição de pavio superior.")
+                elif vela_esticada:
+                    cross_up = False
+                    logger.debug(f"[{self.name}] BUY bloqueado: Vela esticada (Elástico).")
+                elif exaustao_compra:
+                    cross_up = False
+                    logger.debug(f"[{self.name}] BUY bloqueado: Exaustão de movimento (4+ velas verdes consecutivas).")
+
+            if cross_down:
+                if is_doji:
+                    cross_down = False
+                    logger.debug(f"[{self.name}] SELL bloqueado: Vela Doji (Indecisão).")
+                elif rejeicao_baixa:
+                    cross_down = False
+                    logger.debug(f"[{self.name}] SELL bloqueado: Rejeição de pavio inferior.")
+                elif vela_esticada:
+                    cross_down = False
+                    logger.debug(f"[{self.name}] SELL bloqueado: Vela esticada (Elástico).")
+                elif exaustao_venda:
+                    cross_down = False
+                    logger.debug(f"[{self.name}] SELL bloqueado: Exaustão de movimento (4+ velas vermelhas consecutivas).")
+            # ------------------------------------------------
 
             # Filtro 3: Alinhamento de Macrotendência (SMMA)
             trend_up = ((c1 > smma1) and (f1 > smma1) and (s1 > smma1)) if use_trend else True

@@ -113,6 +113,9 @@ class RSIStrategy(BaseStrategy):
             df['body_size'] = abs(df['closePrice'] - df['openPrice'])
             df['avg_body'] = df['body_size'].rolling(window=10).mean()
             df['avg_vol_5'] = df['volume'].rolling(window=5).mean()
+
+            # ATR para filtro de vela esticada
+            df['atr'] = ta.atr(df['highPrice'], df['lowPrice'], df['closePrice'], length=14)
             
             df.dropna(inplace=True)
             if len(df) < 3:
@@ -201,6 +204,29 @@ class RSIStrategy(BaseStrategy):
             bb_touch_sell = ((h1 >= bbu1) or (h2 >= bbu2)) if use_bb else True
             
             volatility_ok = body1 >= (avg_body1 * self.volatility_mult)
+
+            # --- FILTROS ESPECÍFICOS DE OPÇÕES BINÁRIAS ---
+            atr1 = df['atr'].iloc[idx1] if 'atr' in df else body1
+            tamanho_total1 = h1 - l1
+            vela_esticada = tamanho_total1 > (atr1 * 2.0)
+            
+            is_doji = body1 <= (tamanho_total1 * 0.15) if tamanho_total1 > 0 else True
+            
+            pavio_superior1 = h1 - max(c1, o1)
+            pavio_inferior1 = min(c1, o1) - l1
+            rejeicao_alta = pavio_superior1 > body1  
+            rejeicao_baixa = pavio_inferior1 > body1 
+            
+            c3, o3 = df['closePrice'].iloc[-4], df['openPrice'].iloc[-4]
+            c4, o4 = df['closePrice'].iloc[-5], df['openPrice'].iloc[-5]
+            exaustao_compra = (c1 > o1) and (c2 > o2) and (c3 > o3) and (c4 > o4)
+            exaustao_venda = (c1 < o1) and (c2 < o2) and (c3 < o3) and (c4 < o4)
+            
+            if is_doji or vela_esticada or exaustao_compra or rejeicao_alta:
+                candle_ok_buy = False
+            if is_doji or vela_esticada or exaustao_venda or rejeicao_baixa:
+                candle_ok_sell = False
+            # ----------------------------------------------
 
             # 9) Validação Final Institucional
             is_buy = rsi_buy_signal and candle_ok_buy and volatility_ok and market_is_ranging and bb_touch_buy and box_is_large_enough and stopping_volume_ok
