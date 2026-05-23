@@ -12,8 +12,8 @@ class RSIStrategy(BaseStrategy):
         self.symbol = symbol
         self.timeframe_str = timeframe 
         
-        if timeframe == "5m": self.timeframe_seconds = 300
-        elif timeframe == "15m": self.timeframe_seconds = 900
+        if timeframe == "5m": self.timeframe_seconds = 300          # 5 minutos
+        elif timeframe == "15m": self.timeframe_seconds = 900       # 15 minutos
         else: self.timeframe_seconds = 60 
         
         self.profile = profile
@@ -21,39 +21,40 @@ class RSIStrategy(BaseStrategy):
         
         self._apply_profile_settings()
         
-        self.trade_amount = 1.0
-        self.trade_duration = "01:00"
-        self.last_signal = None 
-        self.last_signal_time = None
+        self.trade_amount = 1.0             # Valor fixo para opções binárias (pode ser ajustado conforme necessário)
+        self.trade_duration = "01:00"       # Duração fixa de 1 minuto para opções binárias (pode ser ajustada conforme necessário)
+        self.last_signal = None             # Para evitar múltiplos sinais na mesma vela
+        self.last_signal_time = None        # Para evitar múltiplos sinais na mesma vela
+
 
     def _apply_profile_settings(self):
         """Parâmetros avançados para operar Lateralidade Extrema e Absorção."""
         if self.profile == "Conservador":
-            self.rsi_period = 14            
-            self.max_adx = 20               
-            self.confirm_candle = True      
-            self.volatility_mult = 1.0      
-            self.bb_std = 2.5               
+            self.rsi_period = 14            # Período padrão do RSI para detectar sobrecompra/sobrevenda
+            self.max_adx = 20               # ADX baixo para confirmar lateralidade (pode ser desativado via filtros)
+            self.confirm_candle = True      # Exige um padrão de vela de confirmação para aumentar a precisão
+            self.volatility_mult = 1.0      # Multiplicador de volatilidade
+            self.bb_std = 2.5               # Desvio padrão da banda de Bollinger
             self.min_box_pct = 0.004        # O caixote deve ter pelo menos 0.4% de amplitude
             self.stop_vol_mult = 1.3        # Exige volume 30% superior à média (Alta absorção)
 
         elif self.profile == "Agressivo":
-            self.rsi_period = 7             
-            self.max_adx = 30               
-            self.confirm_candle = False     
-            self.volatility_mult = 0.5      
-            self.bb_std = 2.0               
+            self.rsi_period = 7             # Período mais curto para o RSI, tornando-o mais sensível a mudanças rápidas
+            self.max_adx = 30               # Permite um ADX um pouco mais alto, aceitando lateralidades com leve tendência
+            self.confirm_candle = False     # Não exige padrão de vela de confirmação
+            self.volatility_mult = 0.5      # Aceita velas de sinal com volatilidade mais baixa, tentando pegar movimentos mais sutis
+            self.bb_std = 2.0               # Desvio padrão da banda de Bollinger
             self.min_box_pct = 0.002        # Aceita caixotes mais estreitos (0.2%)
-            self.stop_vol_mult = 1.0        # Não é tão exigente com o volume de paragem
+            self.stop_vol_mult = 1.0        # Não exige volume superior à média, aceitando sinais mesmo em momentos de menor liquidez
 
         elif self.profile == "Customizado" and self.custom_params:
-            self.rsi_period = 14
-            self.max_adx = 25
-            self.volatility_mult = 0.8
-            self.bb_std = 2.0
-            self.min_box_pct = 0.003
-            self.stop_vol_mult = 1.2
-            self.confirm_candle = True      
+            self.rsi_period = 14            # Período do RSI (ex: 14 para o RSI tradicional, 7 para um RSI mais sensível)
+            self.max_adx = 25               # ADX máximo para considerar o mercado como lateral (ex: 20 para lateralidade estrita, 30 para aceitar um pouco de tendência)
+            self.volatility_mult = 0.8      # Multiplicador de volatilidade para validar a força da vela de sinal (ex: 1.0 para exigir uma vela tão volátil quanto a média, 0.5 para aceitar velas com metade da volatilidade média)
+            self.bb_std = 2.0               # Desvio padrão para as Bandas de Bollinger usadas como filtro de lateralidade (ex: 2.0 para o padrão, 2.5 para exigir uma lateralidade mais clara)
+            self.min_box_pct = 0.003        # Amplitude mínima do caixote em porcentagem (ex: 0.003 para exigir que o caixote tenha pelo menos 0.3% de amplitude, 0.001 para aceitar caixotes mais estreitos)
+            self.stop_vol_mult = 1.0        # Multiplicador para o filtro de volume de paragem (ex: 1.0 para exigir que o volume da vela de sinal seja igual ou maior que a média, 0.8 para aceitar sinais mesmo com volume 20% abaixo da média)        
+            self.confirm_candle = True      # Exige um padrão de vela de confirmação para aumentar a precisão (pode ser desativado via filtros)
 
             logger.info("⚙️ A carregar Perfil Customizado...")
             try:
@@ -68,11 +69,11 @@ class RSIStrategy(BaseStrategy):
             except (ValueError, IndexError) as e:
                 logger.error(f"⚠️ Falha na conversão dos parâmetros ({e}). A aplicar fallbacks seguros.")
         else: # Balanceado (Padrão)
-            self.rsi_period = 14            
-            self.max_adx = 25               
-            self.confirm_candle = True      
-            self.volatility_mult = 0.8      
-            self.bb_std = 2.0               
+            self.rsi_period = 14            # Período tradicional do RSI, equilibrando sensibilidade e estabilidade  
+            self.max_adx = 25               # ADX máximo para considerar o mercado como lateral (25 é um valor intermediário que aceita lateralidades com leve tendência, mas ainda filtra mercados claramente direcionais)
+            self.confirm_candle = True      # Exige um padrão de vela de confirmação para aumentar a precisão dos sinais, especialmente útil em mercados laterais onde os falsos sinais são mais comuns
+            self.volatility_mult = 0.8      # Exige que a vela de sinal tenha pelo menos 80% da volatilidade média recente, ajudando a filtrar sinais fracos e focar em movimentos mais significativos dentro da lateralidade
+            self.bb_std = 2.0               # Desvio padrão para as Bandas de Bollinger usadas como filtro de lateralidade (2.0 é o valor tradicional, oferecendo um bom equilíbrio entre filtrar lateralidades muito estreitas e aceitar lateralidades com uma amplitude razoável)
             self.min_box_pct = 0.003        # Amplitude mínima do caixote: 0.3%
             self.stop_vol_mult = 1.2        # Volume deve ser 20% maior que a média recente
 

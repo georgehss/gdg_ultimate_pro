@@ -13,8 +13,8 @@ class MACrossStrategy(BaseStrategy):
         self.timeframe_str = timeframe # Guarda como string para a API (ex: '5m')
         
         # Converte para segundos para o relógio da estratégia
-        if timeframe == "5m": self.timeframe_seconds = 300
-        elif timeframe == "15m": self.timeframe_seconds = 900
+        if timeframe == "5m": self.timeframe_seconds = 300      # 5 minutos
+        elif timeframe == "15m": self.timeframe_seconds = 900   # 15 minutos
         else: self.timeframe_seconds = 60 # Padrão 1 minuto
         
         self.profile = profile
@@ -24,9 +24,9 @@ class MACrossStrategy(BaseStrategy):
         self._apply_profile_settings()
         
         # Variáveis de Estado
-        self.bars_since_signal = self.cooldown_bars 
-        self.trade_amount = 1.0
-        self.trade_duration = "01:00"
+        self.bars_since_signal = self.cooldown_bars     # Começa com o cooldown completo para permitir sinal imediato
+        self.trade_amount = 1.0                         # Valor fixo para opções binárias (pode ser ajustado conforme necessário)
+        self.trade_duration = "01:00"                   # Duração fixa de 1 minuto para opções binárias (pode ser ajustada conforme necessário)
 
     def _apply_profile_settings(self):
         # Filtros de Período Básicos
@@ -47,14 +47,14 @@ class MACrossStrategy(BaseStrategy):
             self.atr_sep_mult = 0.18        # Separação grande obrigatória baseada no ATR
             self.min_adx = 25               # Tendência consolidada
             self.volume_mult = 1.1          # Volume de cruzamento tem de ser 10% maior que a média da SMA20 de volume
-            self.rsi_max_buy = 60           # Muito rigor: recusa comprar num topo (RSI < 60)
-            self.rsi_min_sell = 40          # Muito rigor: recusa vender num fundo (RSI > 40)
+            self.rsi_max_buy = 65           # Muito rigor: recusa comprar num topo (RSI < 65)
+            self.rsi_min_sell = 35          # Muito rigor: recusa vender num fundo (RSI > 35)
 
         elif self.profile == "Agressivo":
             self.fast_period = 5            # Período da EMA Rápida
             self.slow_period = 14           # Período da EMA Lenta
             self.long_ma_period = 23        # Filtro SMMA de macrotendência
-            self.cooldown_bars = 1          # Quase sem intervalo de segurança entre sinais
+            self.cooldown_bars = 2          # Aguarda apenas 2 velas após um sinal para tentar pegar mais movimentos (mais arriscado)
             
             # FILTROS INSTITUCIONAIS DINÂMICOS
             self.use_slope = False          # Ignora a inclinação (tenta apanhar reversões abruptas em "V")
@@ -67,19 +67,19 @@ class MACrossStrategy(BaseStrategy):
 
         elif self.profile == "Customizado" and self.custom_params:
             # Valores base seguros
-            self.fast_period = 5
-            self.slow_period = 14
-            self.long_ma_period = 23
-            self.cooldown_bars = 3
-            self.atr_sep_mult = 0.15
-            self.min_adx = 20
-            self.volume_mult = 1.0
-            self.rsi_max_buy = 70
-            self.rsi_min_sell = 30
+            self.fast_period = 5            # Período da EMA Rápida 
+            self.slow_period = 14           # Período da EMA Lenta 
+            self.long_ma_period = 23        # Filtro SMMA para ditar de qual lado está a macrotendência
+            self.cooldown_bars = 3          # Respiro entre sinais
+            self.atr_sep_mult = 0.15        # Multiplicador de ATR para o filtro de separação
+            self.min_adx = 18               # Exige uma força de tendência mínima
+            self.volume_mult = 1.0          # Exige que o volume da vela de sinal seja igual ou maior que a média
+            self.rsi_max_buy = 70           # Aceita comprar até encostar na zona de sobrecompra
+            self.rsi_min_sell = 30          # Aceita vender mesmo encostado na zona de sobrevenda
             
             # Variáveis de segurança necessárias para o MA Cross funcionar
-            self.use_slope = True          
-            self.use_atr_sep = True        
+            self.use_slope = True           # Filtra cruzamentos mortos onde a média não aponta a direção
+            self.use_atr_sep = True         # Filtra falsos rompimentos raspando nas médias (Requer ATR)
 
             logger.info("⚙️ Carregando Perfil Customizado definido via Telegram...")
 
@@ -129,13 +129,13 @@ class MACrossStrategy(BaseStrategy):
             self.use_slope = True           # Filtra cruzamentos mortos onde a média não aponta a direção
             self.use_atr_sep = True         # Filtra falsos rompimentos raspando nas médias
             self.atr_sep_mult = 0.15        # Espaçamento moderado baseado na volatilidade da hora
-            self.min_adx = 20               # Filtra momentos de extrema lentidão/paralisação do mercado
+            self.min_adx = 18               # Filtra momentos de extrema lentidão/paralisação do mercado
             self.volume_mult = 0.8          # Aceita entrar se o volume estiver pelo menos a 80% do normal
-            self.rsi_max_buy = 65           # Corta compras atrasadas na boca da exaustão
-            self.rsi_min_sell = 35          # Corta vendas atrasadas quando todos já venderam
+            self.rsi_max_buy = 70           # Corta compras atrasadas na boca da exaustão
+            self.rsi_min_sell = 30          # Corta vendas atrasadas quando todos já venderam
 
     async def analyze_market(self):
-        # NOVO: Atualizado o log
+        # Atualizado o log
         logger.info(f"[{self.name}] A processar MA Cross Pro (EMA {self.fast_period}/{self.slow_period}) + SMMA + RSI + ADX + Volume...")
         
         limit_klines = max(150, self.long_ma_period + 50)
