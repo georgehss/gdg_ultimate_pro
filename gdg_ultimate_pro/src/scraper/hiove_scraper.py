@@ -345,10 +345,14 @@ class HioveScraper:
             self.contexts[symbol] = new_context
             self.pages[symbol] = page
             
-            logger.info(f"Pesquisando e selecionando {symbol}...")
-            
+            # Recarrega a página para garantir que está no dashboard principal
             await page.goto(self.main_page.url, wait_until='domcontentloaded', timeout=60000)
             await asyncio.sleep(5)
+            
+            # CORREÇÃO: FECHAR POP-UP ANTES DO CLIQUE
+            if self.is_demo:
+                logger.info(f"[{symbol}] Verificando pop-up interceptador antes de selecionar o ativo...")
+                await self.handle_demo_performance_popup(target_page=page)
             
             logger.info(f"Pesquisando e selecionando {symbol}...")
             await page.locator('//*[@id="header"]/div/div[1]/div[1]/button/i').click(timeout=10000)
