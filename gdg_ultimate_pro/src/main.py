@@ -70,8 +70,17 @@ async def run_session(tg_bot, global_stop_event):
         logger.info("Criando separadores individuais para cada ativo...")
         for ativo in config["assets"]:
             await scraper.setup_asset_page(symbol=ativo, amount=config["amount"], close_time=config["duration"])
+            
+            
+            # PROTEÇÃO: FECHAR POP-UP NAS ABAS DOS ATIVOS
+            if config["is_demo"]:
+                aba_do_ativo = scraper.pages.get(ativo)
+                if aba_do_ativo:
+                    logger.info(f"[{ativo}] Verificando pop-up de desempenho na aba do ativo...")
+                    await scraper.handle_demo_performance_popup(target_page=aba_do_ativo)
 
     broker = HioveBrokerAPI(scraper=scraper, user_config=config)
+
     broker.limit_reached_cb = tg_bot.send_limit_reached_menu  # Conecta a função de parada suave
     await broker.init_session()
     manager = StrategyManager()

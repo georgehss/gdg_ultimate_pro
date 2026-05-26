@@ -252,26 +252,46 @@ class HioveScraper:
             logger.warning(f"Aviso ao tentar fechar o banner: {e}")
 
     async def handle_demo_performance_popup(self, target_page=None):
-        """Verifica se o pop-up de desempenho da conta demo apareceu e clica em 'Permanecer na Demo'."""
+        """Verifica se o pop-up de desempenho da conta demo apareceu e clica em 'Permanecer na Demo', lidando com o recarregamento duplo."""
         page = target_page if target_page else self.main_page
         logger.info("Verificando presença do pop-up de desempenho da Demo...")
-        try:
-            # Localiza o botão pelo texto exato conforme o HTML mapeado
-            btn_stay_demo = page.locator('button:has-text("Permanecer na Demo")')
-            
-            # Aguarda até 5 segundos para o pop-up aparecer
-            await btn_stay_demo.wait_for(state="visible", timeout=5000)
-            logger.info("Pop-up de desempenho detectado! Clicando em 'Permanecer na Demo'...")
-            
-            # Aciona o botão para continuar na Demo
-            await btn_stay_demo.click()
-            await asyncio.sleep(1) 
-            logger.info("✅ Pop-up de desempenho fechado com sucesso. O bot continuará o curso.")
-            
-        except PlaywrightTimeoutError:
-            logger.info("Nenhum pop-up de desempenho da demo apareceu. Continuando o fluxo normal...")
-        except Exception as e:
-            logger.warning(f"Aviso ao tentar fechar o pop-up de desempenho: {e}")
+        
+        # Loop de até 2 tentativas para lidar com o recarregamento da corretora
+        for tentativa in range(1, 3):
+            try:
+                # Localiza o botão pelo texto
+                btn_stay_demo = page.locator('button:has-text("Permanecer na Demo")')
+                
+                # Aguarda até 5 segundos para o pop-up aparecer
+                await btn_stay_demo.wait_for(state="visible", timeout=5000)
+                logger.info(f"Pop-up de desempenho detectado (Ação {tentativa}/2)! Clicando em 'Permanecer na Demo'...")
+                
+                # Aciona o botão para continuar na Demo
+                await btn_stay_demo.click()
+                
+                # Se foi o primeiro clique, aguarda o recarregamento forçado da página
+                if tentativa == 1:
+                    logger.info("Aguardando a página recarregar para verificar pop-up duplo...")
+                    try:
+                        # Aguarda a rede estabilizar após o recarregamento
+                        await page.wait_for_load_state('networkidle', timeout=10000)
+                    except: 
+                        pass
+                    # Um pequeno delay para dar tempo do HTML do segundo pop-up ser renderizado
+                    await asyncio.sleep(2)
+                
+            except PlaywrightTimeoutError:
+                if tentativa == 1:
+                    logger.info("Nenhum pop-up inicial detectado. Continuando o fluxo normal...")
+                else:
+                    logger.info("Nenhum pop-up secundário apareceu. Tela limpa!")
+                # Interrompe o loop se não houver pop-up na tela
+                break 
+            except Exception as e:
+                logger.warning(f"Aviso inesperado ao tentar fechar o pop-up (Tentativa {tentativa}): {e}")
+                break
+                
+        logger.info("✅ Tratamento do pop-up de desempenho finalizado.")
 
     async def select_account_type(self, is_demo: bool, target_page=None):
         """Troca entre a conta Demo e a Real"""
