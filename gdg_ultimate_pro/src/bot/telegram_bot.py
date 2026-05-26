@@ -829,7 +829,6 @@ class TradingTelegramBot:
         
         instrucoes = """
         *🤖 INSTRUÇÕES DE ESTRATÉGIAS DO BOT 🤖*
-        =========================================
 
         *1. PRICE ACTION PRO (O Caçador de Padrões)*
         Esta estratégia observa o comportamento "nu e cru" das velas, mas usa uma bússola de longo prazo para não ser enganada por falsos movimentos.

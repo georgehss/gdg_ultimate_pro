@@ -81,6 +81,10 @@ class HioveScraper:
             await self.handle_welcome_banner()
             
             await self.select_account_type(self.is_demo)
+
+            # Verifica o pop-up de desempenho APENAS se estiver rodando na Demo
+            if self.is_demo:
+                await self.handle_demo_performance_popup()
             
             # LIGA O SISTEMA ANTI-INATIVIDADE AQUI:
             self.keep_alive_task = asyncio.create_task(self._keep_tabs_alive())
@@ -107,6 +111,10 @@ class HioveScraper:
                     await asyncio.sleep(3)
                     await self.handle_welcome_banner(target_page=page)
                     await self.select_account_type(self.is_demo, target_page=page)
+                    
+                    if self.is_demo:
+                        await self.handle_demo_performance_popup(target_page=page)
+
             except Exception:
                 pass # Já estava logado, apenas segue para buscar o ativo
 
@@ -242,6 +250,28 @@ class HioveScraper:
             logger.info("Nenhum banner inicial apareceu. Continuando...")
         except Exception as e:
             logger.warning(f"Aviso ao tentar fechar o banner: {e}")
+
+    async def handle_demo_performance_popup(self, target_page=None):
+        """Verifica se o pop-up de desempenho da conta demo apareceu e clica em 'Permanecer na Demo'."""
+        page = target_page if target_page else self.main_page
+        logger.info("Verificando presença do pop-up de desempenho da Demo...")
+        try:
+            # Localiza o botão pelo texto exato conforme o HTML mapeado
+            btn_stay_demo = page.locator('button:has-text("Permanecer na Demo")')
+            
+            # Aguarda até 5 segundos para o pop-up aparecer
+            await btn_stay_demo.wait_for(state="visible", timeout=5000)
+            logger.info("Pop-up de desempenho detectado! Clicando em 'Permanecer na Demo'...")
+            
+            # Aciona o botão para continuar na Demo
+            await btn_stay_demo.click()
+            await asyncio.sleep(1) 
+            logger.info("✅ Pop-up de desempenho fechado com sucesso. O bot continuará o curso.")
+            
+        except PlaywrightTimeoutError:
+            logger.info("Nenhum pop-up de desempenho da demo apareceu. Continuando o fluxo normal...")
+        except Exception as e:
+            logger.warning(f"Aviso ao tentar fechar o pop-up de desempenho: {e}")
 
     async def select_account_type(self, is_demo: bool, target_page=None):
         """Troca entre a conta Demo e a Real"""
