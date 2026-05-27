@@ -118,6 +118,11 @@ class HioveScraper:
             except Exception:
                 pass # Já estava logado, apenas segue para buscar o ativo
 
+            # CORREÇÃO: VERIFICAÇÃO DO POP-UP INDEPENDENTE
+            if self.is_demo:
+                logger.info(f"[{symbol}] Verificando pop-up de desempenho na recuperação da aba...")
+                await self.handle_demo_performance_popup(target_page=page)
+            
             config = self.asset_configs.get(symbol)
             if not config:
                 logger.error(f"❌ [{symbol}] Sem configuração em memória para recuperar o ativo.")
